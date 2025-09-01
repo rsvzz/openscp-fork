@@ -4,7 +4,7 @@ Explorador de archivos de **dos paneles** con objetivo de SFTP multiplataforma (
 
 ## Estado
 - GUI mínima (Qt 6) con dos paneles locales (copiar/mover/borrar).
-- 
+
 ## Proximamente...
 
 Panel derecho remoto (SFTP) usando libssh2.
