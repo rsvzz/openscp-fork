@@ -1,0 +1,22 @@
+# CMake / Build
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+/compile_commands.json
+
+# Ninja
+.ninja_deps
+.ninja_log
+
+# Qt Creator
+*.user
+*.pro.user
+*.autosave
+
+# VS Code
+.vscode/
+.vscode-test/
+
+# macOS
+.DS_Store
+
