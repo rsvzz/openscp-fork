@@ -1,9 +1,16 @@
 cmake_minimum_required(VERSION 3.22)
 
-add_library(openscp_core STATIC
-  src/mock/MockSftpClient.cpp
-  src/libssh2/Libssh2SftpClient.cpp   # <-- ESTE DEBE ESTAR
+option(OPEN_SCP_ENABLE_MOCK "Build mock SFTP client" OFF)
+
+set(OPEN_SCP_CORE_SRCS
+  src/libssh2/Libssh2SftpClient.cpp   # implementación real
 )
+
+if (OPEN_SCP_ENABLE_MOCK)
+  list(APPEND OPEN_SCP_CORE_SRCS src/mock/MockSftpClient.cpp)
+endif()
+
+add_library(openscp_core STATIC ${OPEN_SCP_CORE_SRCS})
 
 target_include_directories(openscp_core
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

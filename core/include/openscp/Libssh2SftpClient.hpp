@@ -26,12 +26,37 @@ public:
   bool get(const std::string& remote,
          const std::string& local,
          std::string& err,
-         std::function<void(std::size_t,std::size_t)> progress) override;
+         std::function<void(std::size_t,std::size_t)> progress,
+         std::function<bool()> shouldCancel) override;
 
   bool put(const std::string& local,
          const std::string& remote,
          std::string& err,
-         std::function<void(std::size_t,std::size_t)> progress) override;
+         std::function<void(std::size_t,std::size_t)> progress,
+         std::function<bool()> shouldCancel) override;
+
+  bool exists(const std::string& remote_path,
+              bool& isDir,
+              std::string& err) override;
+
+  bool stat(const std::string& remote_path,
+            FileInfo& info,
+            std::string& err) override;
+
+  bool mkdir(const std::string& remote_dir,
+             std::string& err,
+             unsigned int mode = 0755) override;
+
+  bool removeFile(const std::string& remote_path,
+                  std::string& err) override;
+
+  bool removeDir(const std::string& remote_dir,
+                 std::string& err) override;
+
+  bool rename(const std::string& from,
+              const std::string& to,
+              std::string& err,
+              bool overwrite = false) override;
 
 
 private:

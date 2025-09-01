@@ -6,23 +6,24 @@ El objetivo del proyecto es ofrecer una alternativa ligera y multiplataforma a h
 
 ---
 
-## Características (v0.3.0)
+## Características (v0.4.0)
 
 - **Exploración en dos paneles**  
   - Panel izquierdo y derecho, navegables de manera independiente.  
   - Cada panel tiene su propia **toolbar** con botón **Arriba** para retroceder al directorio padre.  
 
 - **Operaciones locales**  
-  - Copiar (`F5`)  
-  - Mover (`F6`)  
-  - Eliminar (`Supr`)  
-  - Manejo de conflictos: sobrescribir, omitir o aplicar a todos.  
+  - Copiar (`F5`) y mover (`F6`) recursivo.  
+  - Eliminar (`Supr`).  
+  - Manejo de conflictos: sobrescribir, omitir, renombrar y aplicar a todos.
 
 - **Soporte SFTP (libssh2)**  
   - Conexión con usuario/contraseña o clave privada.  
+  - Validación de `known_hosts` (estricto por defecto).  
   - Navegación de directorios remotos.  
-  - **Descarga de archivos** con barra de progreso y apertura automática con la app por defecto.  
-  - Selección de carpeta de descarga (se recuerda la última elegida).  
+  - Descargar (F7) archivos y carpetas (recursivo) con barra de progreso global, cancelación y resolución de colisiones (sobrescribir/omitir/renombrar/… todo).  
+  - Subir (F5) archivos y carpetas (recursivo) con progreso y cancelación.  
+  - Crear carpeta, renombrar y borrar (incluye borrado recursivo) en remoto.  
 
 - **Interfaz Qt**  
   - Splitter central ajustable.  
@@ -33,10 +34,10 @@ El objetivo del proyecto es ofrecer una alternativa ligera y multiplataforma a h
 
 ## Roadmap
 
-- [ ] Subida de archivos (local → remoto).  
-- [ ] Borrado remoto.  
-- [ ] Mostrar permisos, tamaños y fechas en el listado remoto.  
-- [ ] Validación de `known_hosts` para seguridad SSH.  
+- [ ] Descarga recursiva con estimación total de tamaño y ETA.  
+- [ ] Reintentos, colas avanzadas y “reanudación” (resume).  
+- [ ] Vista de permisos/propietarios y edición chmod/chown.  
+- [ ] Preferencias: selector/política de `known_hosts` desde UI.  
 - [ ] Mejoras de UX (drag & drop, menú contextual).  
 
 ---
@@ -70,5 +71,5 @@ cmake --build build
 ```
 
 ## Estado
-Este release (v0.3.0) marca la primera versión mínimamente usable (pre-alpha).
+Este release (v0.4.0) marca una versión temprana usable (pre‑alpha) con transferencias recursivas y validación de known_hosts.
 Se recomienda solo para pruebas y retroalimentación temprana.

@@ -8,6 +8,7 @@
 
 class RemoteModel;              // fwd
 class QModelIndex;              // fwd para la firma del slot
+class QToolBar;                 // fwd
 namespace openscp { class SftpClient; } // fwd (usamos dtor en .cpp)
 
 class MainWindow : public QMainWindow {
@@ -31,6 +32,11 @@ private slots:
     void disconnectSftp();
     void rightItemActivated(const QModelIndex& idx); // doble click en remoto
     void downloadRightToLeft(); // remoto -> local
+    void uploadViaDialog();     // local -> remoto (diálogo: archivos o carpeta)
+    void uploadDirViaDialog();  // helper: subir carpeta seleccionada
+    void newDirRight();
+    void renameRightSelected();
+    void deleteRightSelected();
 
 private:
     // Estado remoto
@@ -62,6 +68,10 @@ private:
     QAction* actConnect_     = nullptr;
     QAction* actDisconnect_  = nullptr;
     QAction* actDownloadF7_ = nullptr;
+    QAction* actUploadRight_ = nullptr;
+    QAction* actNewDirRight_  = nullptr;
+    QAction* actRenameRight_  = nullptr;
+    QAction* actDeleteRight_  = nullptr; // remoto
 
     // acciones sub-toolbars
     QAction* actUpLeft_  = nullptr; // atras izquierda
@@ -73,6 +83,7 @@ private:
 
     // descargas
     QString downloadDir_; // última carpeta local elegida para descargas
+    QString uploadDir_;   // última carpeta local elegida para subidas
 
 
 };

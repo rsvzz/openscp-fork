@@ -1,5 +1,7 @@
 #include "RemoteModel.hpp"
 #include <QVariant>
+#include <QDateTime>
+#include <QLocale>
 
 RemoteModel::RemoteModel(openscp::SftpClient* client, QObject* parent)
   : QAbstractListModel(parent), client_(client) {}
@@ -17,7 +19,15 @@ QVariant RemoteModel::data(const QModelIndex& index, int role) const {
     return it.name + (it.isDir ? "/" : "");
   }
   if (role == Qt::ToolTipRole) {
-    return it.isDir ? "Carpeta" : "Archivo";
+    const auto &it = items_[index.row()];
+    if (it.isDir) return "Carpeta";
+    QString tip = "Archivo";
+    if (it.size >= 0) tip += QString(" • %1 bytes").arg(it.size);
+    if (it.mtime > 0) {
+      QDateTime dt = QDateTime::fromSecsSinceEpoch((qint64)it.mtime);
+      tip += " • " + QLocale().toString(dt, QLocale::ShortFormat);
+    }
+    return tip;
   }
   return {};
 }
