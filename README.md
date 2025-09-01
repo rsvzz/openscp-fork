@@ -70,5 +70,5 @@ cmake --build build
 ```
 
 ## Estado
-Este release marca la primera versión mínimamente usable (pre-alpha).
+Este release (v0.3.0) marca la primera versión mínimamente usable (pre-alpha).
 Se recomienda solo para pruebas y retroalimentación temprana.
