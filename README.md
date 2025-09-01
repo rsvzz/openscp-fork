@@ -6,7 +6,7 @@ El objetivo del proyecto es crear una alternativa ligera y multiplataforma a her
 
 ---
 
-## ✨ Características actuales (v0.4.0)
+## Características actuales (v0.4.0)
 
 - **Exploración en dos paneles**  
   - Panel izquierdo y derecho, navegables de manera independiente.  
@@ -31,7 +31,7 @@ El objetivo del proyecto es crear una alternativa ligera y multiplataforma a her
 
 ---
 
-## 🚀 Roadmap
+## Roadmap
 
 - [ ] Subida de archivos (local → remoto).  
 - [ ] Borrado remoto.  
@@ -41,7 +41,7 @@ El objetivo del proyecto es crear una alternativa ligera y multiplataforma a her
 
 ---
 
-## 🔧 Requisitos
+## Requisitos
 
 - Qt 6.x  
 - libssh2  
@@ -50,7 +50,7 @@ El objetivo del proyecto es crear una alternativa ligera y multiplataforma a her
 
 ---
 
-## 🛠️ Compilación
+## Compilación
 
 ```bash
 git clone https://github.com/tuusuario/OpenSCP-hello.git
