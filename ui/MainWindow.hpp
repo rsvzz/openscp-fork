@@ -41,6 +41,7 @@ private slots:
     void connectSftp();
     void disconnectSftp();
     void rightItemActivated(const QModelIndex& idx); // doble click en remoto
+    void leftItemActivated(const QModelIndex& idx);  // doble click en local (izquierda)
     void downloadRightToLeft(); // remoto -> local
     void uploadViaDialog();     // local -> remoto (diálogo: archivos o carpeta)
     void newDirRight();
@@ -58,6 +59,7 @@ private slots:
 
 private:
     void updateDeleteShortcutEnables();
+    void applyPreferences();
     // Estado remoto (una sola sesión activa)
     std::unique_ptr<openscp::SftpClient> sftp_;
     bool rightIsRemote_ = false;
@@ -138,4 +140,10 @@ private:
     void updateRemoteWriteability();
 
     bool firstShow_ = true;
+
+    // Preferencias de usuario
+    bool prefShowHidden_ = false;
+    bool prefSingleClick_ = false;
+    QMetaObject::Connection leftClickConn_;
+    QMetaObject::Connection rightClickConn_;
 };

@@ -26,6 +26,8 @@ public:
 
     bool isDir(const QModelIndex& idx) const;
     QString nameAt(const QModelIndex& idx) const;
+    void setShowHidden(bool v) { showHidden_ = v; }
+    bool showHidden() const { return showHidden_; }
 
 private:
     openscp::SftpClient* client_ = nullptr; // no owned
@@ -40,4 +42,5 @@ private:
         quint32 gid;
     };
     std::vector<Item> items_;
+    bool showHidden_ = false; // ocultar nombres que empiezan por '.' si es false
 };

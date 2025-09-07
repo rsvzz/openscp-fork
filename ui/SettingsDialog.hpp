@@ -4,6 +4,7 @@
 
 class QComboBox;
 class QPushButton;
+class QCheckBox;
 
 class SettingsDialog : public QDialog {
     Q_OBJECT
@@ -15,4 +16,6 @@ private slots:
 
 private:
     QComboBox* langCombo_  = nullptr;   // es/en
+    QCheckBox* showHidden_ = nullptr;   // mostrar archivos ocultos
+    QComboBox* clickMode_  = nullptr;   // 1 clic vs 2 clics
 };

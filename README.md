@@ -87,9 +87,3 @@ cmake -S . -B build
 cmake --build build
 ./build/openscp_hello
 ```
-
-## Localización (i18n)
-
-- Archivos de traducción (`.ts`): `src/openscp_ts/openscp_es.ts`, `src/openscp_ts/openscp_en.ts`.
-- Durante la compilación, CMake/Qt genera los `.qm` y los incrusta como recursos en `:/i18n`.
-- Para actualizar traducciones, edita los `.ts` y recompila; Qt ejecuta `lrelease` automáticamente.

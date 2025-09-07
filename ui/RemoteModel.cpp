@@ -87,7 +87,9 @@ bool RemoteModel::setRootPath(const QString& path, QString* errorOut) {
     items_.clear();
     items_.reserve(out.size());
     for (const auto& f : out) {
-        items_.push_back({ QString::fromStdString(f.name), f.is_dir, f.size, f.mtime, f.mode, f.uid, f.gid });
+        const QString name = QString::fromStdString(f.name);
+        if (!showHidden_ && name.startsWith('.')) continue;
+        items_.push_back({ name, f.is_dir, f.size, f.mtime, f.mode, f.uid, f.gid });
     }
     currentPath_ = path;
     endResetModel();

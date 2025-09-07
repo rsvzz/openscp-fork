@@ -7,6 +7,7 @@
 #include <QDialogButtonBox>
 #include <QSettings>
 #include <QMessageBox>
+#include <QCheckBox>
 
 SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     setWindowTitle(tr("Configuración"));
@@ -24,11 +25,35 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
         root->addLayout(row);
     }
 
+    // Modo de clic (1 o 2)
+    {
+        auto* row = new QHBoxLayout();
+        row->addWidget(new QLabel(tr("Apertura con:"), this));
+        clickMode_ = new QComboBox(this);
+        clickMode_->addItem(tr("Doble clic"), 2);
+        clickMode_->addItem(tr("Un clic"), 1);
+        row->addWidget(clickMode_, 1);
+        root->addLayout(row);
+    }
+
+    // Mostrar archivos ocultos (al final)
+    {
+        auto* row = new QHBoxLayout();
+        showHidden_ = new QCheckBox(tr("Mostrar archivos ocultos"), this);
+        row->addWidget(showHidden_);
+        row->addStretch();
+        root->addLayout(row);
+    }
+
     // Cargar desde QSettings
     QSettings s("OpenSCP", "OpenSCP");
     const QString lang  = s.value("UI/language", "es").toString();
     const int li = langCombo_->findData(lang);
     if (li >= 0) langCombo_->setCurrentIndex(li);
+    const bool showHidden = s.value("UI/showHidden", false).toBool();
+    showHidden_->setChecked(showHidden);
+    const bool singleClick = s.value("UI/singleClick", false).toBool();
+    clickMode_->setCurrentIndex(singleClick ? 1 : 0);
 
     // Botones
     auto* btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -43,6 +68,9 @@ void SettingsDialog::accept() {
     QSettings s("OpenSCP", "OpenSCP");
     const QString prevLang = s.value("UI/language", "es").toString();
     s.setValue("UI/language", chosenLang);
+    s.setValue("UI/showHidden", showHidden_ && showHidden_->isChecked());
+    const bool singleClick = (clickMode_ && clickMode_->currentData().toInt() == 1);
+    s.setValue("UI/singleClick", singleClick);
     s.sync();
 
     // Solo avisar si realmente cambió el idioma

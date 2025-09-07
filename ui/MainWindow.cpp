@@ -49,6 +49,7 @@
 #include <QScreen>
 #include <QGuiApplication>
 #include <QStyle>
+#include <QSettings>
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -138,6 +139,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     leftView_->setModel(leftModel_);
     rightView_->setModel(rightLocalModel_);
+    // Evitar expandir subárbol con doble clic; usaremos navegación por cambio de raíz
+    leftView_->setExpandsOnDoubleClick(false);
+    rightView_->setExpandsOnDoubleClick(false);
     leftView_->setRootIndex(leftModel_->index(home));
     rightView_->setRootIndex(rightLocalModel_->index(home));
 
@@ -361,8 +365,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         helpMenu->addAction(reportAct);
     }
 
-    // Doble click en panel derecho: navegar en remoto o descargar/abrir archivo
+    // Doble clic/Enter: navegación en ambos paneles
     connect(rightView_, &QTreeView::activated, this, &MainWindow::rightItemActivated);
+    connect(leftView_,  &QTreeView::activated, this, &MainWindow::leftItemActivated);
 
     // Menú contextual en panel derecho
     rightView_->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -397,6 +402,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         statusBar()->showMessage(tr("Advertencia: almacenamiento de secretos sin cifrar activado (fallback)"), 8000);
     }
 
+    // Aplicar preferencias de usuario (ocultos, modo de clic, etc.)
+    applyPreferences();
     updateDeleteShortcutEnables();
 }
 
@@ -407,7 +414,9 @@ void MainWindow::showAboutDialog() {
 
 void MainWindow::showSettingsDialog() {
     SettingsDialog dlg(this);
-    dlg.exec();
+    if (dlg.exec() == QDialog::Accepted) {
+        applyPreferences();
+    }
 }
 
 void MainWindow::chooseLeftDir() {
@@ -840,7 +849,17 @@ void MainWindow::setRightRemoteRoot(const QString& path) {
 }
 
 void MainWindow::rightItemActivated(const QModelIndex& idx) {
-    if (!rightIsRemote_ || !rightRemoteModel_) return;
+    // Modo local (panel derecho local): navegar entrando en carpetas
+    if (!rightIsRemote_) {
+        if (!rightLocalModel_) return;
+        const QFileInfo fi = rightLocalModel_->fileInfo(idx);
+        if (fi.isDir()) {
+            setRightRoot(fi.absoluteFilePath());
+        }
+        return;
+    }
+    // Modo remoto: navegar o descargar/abrir archivo
+    if (!rightRemoteModel_) return;
     if (rightRemoteModel_->isDir(idx)) {
         const QString name = rightRemoteModel_->nameAt(idx);
         QString next = rightRemoteModel_->rootPath();
@@ -871,6 +890,15 @@ void MainWindow::rightItemActivated(const QModelIndex& idx) {
     if (!ok) { QMessageBox::critical(this, tr("Descarga fallida"), QString::fromStdString(err)); return; }
     QDesktopServices::openUrl(QUrl::fromLocalFile(localPath));
     statusBar()->showMessage(tr("Descargado: ") + localPath, 5000);
+}
+
+// Doble clic en panel izquierdo: si es carpeta, entrar y reemplazar raíz
+void MainWindow::leftItemActivated(const QModelIndex& idx) {
+    if (!leftModel_) return;
+    const QFileInfo fi = leftModel_->fileInfo(idx);
+    if (fi.isDir()) {
+        setLeftRoot(fi.absoluteFilePath());
+    }
 }
 
 void MainWindow::downloadRightToLeft() {
@@ -1763,6 +1791,7 @@ bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& er
 void MainWindow::applyRemoteConnectedUI(const openscp::SessionOptions& opt) {
     delete rightRemoteModel_;
     rightRemoteModel_ = new RemoteModel(sftp_.get(), this);
+    rightRemoteModel_->setShowHidden(prefShowHidden_);
     QString e;
     if (!rightRemoteModel_->setRootPath("/", &e)) {
         QMessageBox::critical(this, "Error listando remoto", e);
@@ -1796,6 +1825,42 @@ void MainWindow::applyRemoteConnectedUI(const openscp::SessionOptions& opt) {
     setWindowTitle(tr("OpenSCP (demo) — local/remoto (SFTP)"));
     updateRemoteWriteability();
     updateDeleteShortcutEnables();
+}
+
+void MainWindow::applyPreferences() {
+    QSettings s("OpenSCP", "OpenSCP");
+    const bool showHidden = s.value("UI/showHidden", false).toBool();
+    const bool singleClick = s.value("UI/singleClick", false).toBool();
+
+    // Local: filtros de modelo (ocultos on/off)
+    auto applyLocalFilters = [&](QFileSystemModel* m) {
+        if (!m) return;
+        QDir::Filters f = QDir::AllEntries | QDir::NoDotAndDotDot | QDir::AllDirs;
+        if (showHidden) f = f | QDir::Hidden | QDir::System;
+        m->setFilter(f);
+    };
+    applyLocalFilters(leftModel_);
+    applyLocalFilters(rightLocalModel_);
+
+    // Remoto: re-listar con filtro de ocultos
+    prefShowHidden_ = showHidden;
+    if (rightRemoteModel_) {
+        rightRemoteModel_->setShowHidden(showHidden);
+        QString dummy;
+        rightRemoteModel_->setRootPath(rightRemoteModel_->rootPath(), &dummy);
+    }
+
+    // Activación por un clic (añadir/quitar conexión a clicked())
+    if (prefSingleClick_ != singleClick) {
+        // Desconectar conexiones previas si existían
+        if (leftClickConn_)  { QObject::disconnect(leftClickConn_);  leftClickConn_  = QMetaObject::Connection(); }
+        if (rightClickConn_) { QObject::disconnect(rightClickConn_); rightClickConn_ = QMetaObject::Connection(); }
+        if (singleClick) {
+            if (leftView_)  leftClickConn_  = connect(leftView_,  &QTreeView::clicked,   this, &MainWindow::leftItemActivated);
+            if (rightView_) rightClickConn_ = connect(rightView_, &QTreeView::clicked,  this, &MainWindow::rightItemActivated);
+        }
+        prefSingleClick_ = singleClick;
+    }
 }
 
 void MainWindow::updateRemoteWriteability() {
