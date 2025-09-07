@@ -138,11 +138,11 @@ void TransferManager::schedule() {
     // Resolución de colisiones previa y lanzamiento hasta maxConcurrent_
     auto askOverwrite = [&](const QString& name, const QString& srcInfo, const QString& dstInfo) -> int {
         QMessageBox msg(nullptr);
-        msg.setWindowTitle("Conflicto");
-        msg.setText(QString("«%1» ya existe.\nOrigen: %2\nDestino: %3").arg(name, srcInfo, dstInfo));
-        QAbstractButton* btResume    = msg.addButton("Reanudar", QMessageBox::ActionRole);
-        QAbstractButton* btOverwrite = msg.addButton("Sobrescribir", QMessageBox::AcceptRole);
-        QAbstractButton* btSkip      = msg.addButton("Omitir", QMessageBox::RejectRole);
+        msg.setWindowTitle(tr("Conflicto"));
+        msg.setText(tr("«%1» ya existe.\nOrigen: %2\nDestino: %3").arg(name, srcInfo, dstInfo));
+        QAbstractButton* btResume    = msg.addButton(tr("Reanudar"), QMessageBox::ActionRole);
+        QAbstractButton* btOverwrite = msg.addButton(tr("Sobrescribir"), QMessageBox::AcceptRole);
+        QAbstractButton* btSkip      = msg.addButton(tr("Omitir"), QMessageBox::RejectRole);
         msg.exec();
         if (msg.clickedButton() == btResume)    return 2;
         if (msg.clickedButton() == btOverwrite) return 1;

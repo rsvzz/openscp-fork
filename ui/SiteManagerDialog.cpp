@@ -12,21 +12,21 @@
 #include "SecretStore.hpp"
 
 SiteManagerDialog::SiteManagerDialog(QWidget* parent) : QDialog(parent) {
-    setWindowTitle("Gestor de sitios");
+    setWindowTitle(tr("Gestor de sitios"));
     auto* lay = new QVBoxLayout(this);
     table_ = new QTableWidget(this);
     table_->setColumnCount(3);
-    table_->setHorizontalHeaderLabels({"Nombre", "Host", "Usuario"});
+    table_->setHorizontalHeaderLabels({ tr("Nombre"), tr("Host"), tr("Usuario") });
     table_->horizontalHeader()->setStretchLastSection(true);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
     lay->addWidget(table_);
 
     auto* bb = new QDialogButtonBox(this);
-    btAdd_  = bb->addButton("Añadir",   QDialogButtonBox::ActionRole);
-    btEdit_ = bb->addButton("Editar",   QDialogButtonBox::ActionRole);
-    btDel_  = bb->addButton("Eliminar", QDialogButtonBox::ActionRole);
-    btConn_ = bb->addButton("Conectar", QDialogButtonBox::AcceptRole);
+    btAdd_  = bb->addButton(tr("Añadir"),   QDialogButtonBox::ActionRole);
+    btEdit_ = bb->addButton(tr("Editar"),   QDialogButtonBox::ActionRole);
+    btDel_  = bb->addButton(tr("Eliminar"), QDialogButtonBox::ActionRole);
+    btConn_ = bb->addButton(tr("Conectar"), QDialogButtonBox::AcceptRole);
     btClose_= bb->addButton(QDialogButtonBox::Close);
     if (btClose_) btClose_->setText(tr("Cerrar"));
     lay->addWidget(bb);
@@ -101,7 +101,7 @@ void SiteManagerDialog::onAdd() {
     auto opt = dlg.options();
     bool ok = false;
     QString name = QInputDialog::getText(
-        this, "Nombre del sitio", "Nombre:",
+        this, tr("Nombre del sitio"), tr("Nombre:"),
         QLineEdit::Normal,
         QString("%1@%2").arg(QString::fromStdString(opt.username), QString::fromStdString(opt.host)),
         &ok
@@ -136,7 +136,7 @@ void SiteManagerDialog::onEdit() {
     if (dlg.exec() != QDialog::Accepted) return;
     e.opt = dlg.options();
     bool ok = false;
-    QString name = QInputDialog::getText(this, "Nombre del sitio", "Nombre:", QLineEdit::Normal, e.name, &ok);
+    QString name = QInputDialog::getText(this, tr("Nombre del sitio"), tr("Nombre:"), QLineEdit::Normal, e.name, &ok);
     if (!ok || name.isEmpty()) return;
     e.name = name;
     sites_[row] = e;

@@ -50,8 +50,8 @@ QVariant RemoteModel::data(const QModelIndex& index, int role) const {
     }
     if (role == Qt::ToolTipRole) {
         const auto& it = items_[index.row()];
-        if (it.isDir) return "Carpeta";
-        QString tip = "Archivo";
+        if (it.isDir) return tr("Carpeta");
+        QString tip = tr("Archivo");
         if (it.size > 0) {
             const QString human = QLocale().formattedDataSize((qint64)it.size, 1, QLocale::DataSizeIecFormat);
             const QString bytes = QLocale().toString((qulonglong)it.size);
@@ -107,10 +107,10 @@ QString RemoteModel::nameAt(const QModelIndex& idx) const {
 QVariant RemoteModel::headerData(int section, Qt::Orientation orientation, int role) const {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole) return {};
     switch (section) {
-        case 0: return "Nombre";
-        case 1: return "Tamaño";
-        case 2: return "Fecha";
-        case 3: return "Permisos";
+        case 0: return tr("Nombre");
+        case 1: return tr("Tamaño");
+        case 2: return tr("Fecha");
+        case 3: return tr("Permisos");
     }
     return {};
 }

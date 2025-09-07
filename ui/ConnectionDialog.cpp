@@ -10,7 +10,7 @@
 #include <QDir>
 
 ConnectionDialog::ConnectionDialog(QWidget* parent) : QDialog(parent) {
-    setWindowTitle("Conectar (SFTP)");
+    setWindowTitle(tr("Conectar (SFTP)"));
     auto* lay = new QFormLayout(this);
 
     host_ = new QLineEdit(this);
@@ -32,37 +32,37 @@ ConnectionDialog::ConnectionDialog(QWidget* parent) : QDialog(parent) {
     keyPass_->setEchoMode(QLineEdit::Password);
 
     // Layout
-    lay->addRow("Host:", host_);
-    lay->addRow("Puerto:", port_);
-    lay->addRow("Usuario:", user_);
-    lay->addRow("Contraseña:", pass_);
-    lay->addRow("Ruta clave privada:", keyPath_);
-    lay->addRow("Passphrase clave:", keyPass_);
+    lay->addRow(tr("Host:"), host_);
+    lay->addRow(tr("Puerto:"), port_);
+    lay->addRow(tr("Usuario:"), user_);
+    lay->addRow(tr("Contraseña:"), pass_);
+    lay->addRow(tr("Ruta clave privada:"), keyPath_);
+    lay->addRow(tr("Passphrase clave:"), keyPass_);
 
     // known_hosts
     khPath_ = new QLineEdit(this);
     khPolicy_ = new QComboBox(this);
-    khPolicy_->addItem("Estricto", static_cast<int>(openscp::KnownHostsPolicy::Strict));
-    khPolicy_->addItem("Aceptar nuevo (TOFU)", static_cast<int>(openscp::KnownHostsPolicy::AcceptNew));
-    khPolicy_->addItem("Sin verificación (no recomendado)", static_cast<int>(openscp::KnownHostsPolicy::Off));
-    lay->addRow("known_hosts:", khPath_);
-    lay->addRow("Política:", khPolicy_);
+    khPolicy_->addItem(tr("Estricto"), static_cast<int>(openscp::KnownHostsPolicy::Strict));
+    khPolicy_->addItem(tr("Aceptar nuevo (TOFU)"), static_cast<int>(openscp::KnownHostsPolicy::AcceptNew));
+    khPolicy_->addItem(tr("Sin verificación (no recomendado)"), static_cast<int>(openscp::KnownHostsPolicy::Off));
+    lay->addRow(tr("known_hosts:"), khPath_);
+    lay->addRow(tr("Política:"), khPolicy_);
 
     // Botón para elegir known_hosts
-    khBrowse_ = new QPushButton("Elegir known_hosts…", this);
+    khBrowse_ = new QPushButton(tr("Elegir known_hosts…"), this);
     lay->addRow("", khBrowse_);
     connect(khBrowse_, &QPushButton::clicked, this, [this] {
-        const QString f = QFileDialog::getOpenFileName(this, "Selecciona known_hosts", QDir::homePath() + "/.ssh");
+        const QString f = QFileDialog::getOpenFileName(this, tr("Selecciona known_hosts"), QDir::homePath() + "/.ssh");
         if (!f.isEmpty()) khPath_->setText(f);
     });
 
     // (Opcional) botón para elegir archivo de clave privada
     // Si lo quieres, descomenta estas 6 líneas:
     
-    auto* browseBtn = new QPushButton("Elegir clave…", this);
+    auto* browseBtn = new QPushButton(tr("Elegir clave…"), this);
     lay->addRow("", browseBtn);
     connect(browseBtn, &QPushButton::clicked, this, [this]{
-        const QString f = QFileDialog::getOpenFileName(this, "Selecciona clave privada", QDir::homePath() + "/.ssh");
+        const QString f = QFileDialog::getOpenFileName(this, tr("Selecciona clave privada"), QDir::homePath() + "/.ssh");
         if (!f.isEmpty()) keyPath_->setText(f);
     });
     

@@ -13,6 +13,7 @@ class QModelIndex;              // fwd para la firma del slot
 class QToolBar;                 // fwd
 class QMenu;                    // fwd
 class QEvent;                   // fwd para eventFilter
+class QDialog;                  // fwd
 namespace openscp { class SftpClient; struct SessionOptions; } // fwd
 
 class MainWindow : public QMainWindow {
@@ -22,6 +23,7 @@ public:
     ~MainWindow();
 protected:
     bool eventFilter(QObject* obj, QEvent* ev) override;
+    void showEvent(QShowEvent* e) override;
 
 private slots:
     void chooseLeftDir();
@@ -49,6 +51,10 @@ private slots:
     void showLeftContextMenu(const QPoint& pos);
     void newDirLeft();
     void renameLeftSelected();
+
+    // Menú de aplicación
+    void showAboutDialog();
+    void showSettingsDialog();
 
 private:
     void updateDeleteShortcutEnables();
@@ -108,6 +114,13 @@ private:
     QAction* actShowQueue_ = nullptr;
     QAction* actSites_     = nullptr; // gestor de sitios
 
+    // Menú superior
+    QMenu* appMenu_    = nullptr; // OpenSCP
+    QMenu* fileMenu_   = nullptr; // Archivo
+    QAction* actAbout_ = nullptr;
+    QAction* actPrefs_ = nullptr;
+    QAction* actQuit_  = nullptr;
+
     // descargas
     QString downloadDir_; // última carpeta local elegida para descargas
     QString uploadDir_;   // última carpeta local elegida para subidas
@@ -124,4 +137,5 @@ private:
     // Recalcula si el directorio remoto actual es escribible (crea/borra una carpeta temporal)
     void updateRemoteWriteability();
 
+    bool firstShow_ = true;
 };

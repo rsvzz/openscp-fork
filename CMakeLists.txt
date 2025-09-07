@@ -9,7 +9,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets LinguistTools)
 
 option(OPEN_SCP_BUILD_SECURE_ONLY "Disable insecure fallback for secrets storage" ON)
 
@@ -33,6 +33,10 @@ add_executable(openscp_hello
   ui/SiteManagerDialog.cpp
   ui/SecretStore.hpp
   ui/SecretStore.cpp
+  ui/SettingsDialog.hpp
+  ui/SettingsDialog.cpp
+  ui/AboutDialog.hpp
+  ui/AboutDialog.cpp
 )
 
 target_include_directories(openscp_hello PRIVATE
@@ -53,3 +57,30 @@ endif()
 if (OPEN_SCP_BUILD_SECURE_ONLY)
   target_compile_definitions(openscp_hello PRIVATE OPEN_SCP_BUILD_SECURE_ONLY=1)
 endif()
+
+# Traducciones (es->en): compilar TS a QM y embeber como recurso.
+# Traducciones ahora se ubican en src/openscp_ts
+qt_add_translation(QM_FILES
+  src/openscp_ts/openscp_es.ts
+  src/openscp_ts/openscp_en.ts
+)
+# Establece alias relativos para los recursos, evitando rutas absolutas en el qrc
+set(QM_ES "")
+set(QM_EN "")
+foreach(qm ${QM_FILES})
+  if(qm MATCHES "openscp_es\\.qm$")
+    set(QM_ES "${qm}")
+  elseif(qm MATCHES "openscp_en\\.qm$")
+    set(QM_EN "${qm}")
+  endif()
+endforeach()
+if(QM_ES)
+  set_source_files_properties(${QM_ES} PROPERTIES QT_RESOURCE_ALIAS "openscp_es.qm")
+endif()
+if(QM_EN)
+  set_source_files_properties(${QM_EN} PROPERTIES QT_RESOURCE_ALIAS "openscp_en.qm")
+endif()
+qt_add_resources(openscp_hello i18n
+  PREFIX "/i18n"
+  FILES ${QM_FILES}
+)

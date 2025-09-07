@@ -12,7 +12,7 @@
 
 TransferQueueDialog::TransferQueueDialog(TransferManager* mgr, QWidget* parent)
   : QDialog(parent), mgr_(mgr) {
-  setWindowTitle("Cola de transferencias");
+  setWindowTitle(tr("Cola de transferencias"));
   resize(760, 380);
   setSizeGripEnabled(true);
 
@@ -21,7 +21,7 @@ TransferQueueDialog::TransferQueueDialog(TransferManager* mgr, QWidget* parent)
   // Tabla de tareas
   table_ = new QTableWidget(this);
   table_->setColumnCount(6);
-  table_->setHorizontalHeaderLabels({"Tipo","Origen","Destino","Estado","Progreso","Intentos"});
+  table_->setHorizontalHeaderLabels({ tr("Tipo"), tr("Origen"), tr("Destino"), tr("Estado"), tr("Progreso"), tr("Intentos") });
   table_->horizontalHeader()->setStretchLastSection(true);
   table_->verticalHeader()->setVisible(false);
   table_->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -101,12 +101,12 @@ TransferQueueDialog::TransferQueueDialog(TransferManager* mgr, QWidget* parent)
 
 static QString statusText(TransferTask::Status s) {
   switch (s) {
-    case TransferTask::Status::Queued: return "En cola";
-    case TransferTask::Status::Running: return "En progreso";
-    case TransferTask::Status::Paused: return "Pausado";
-    case TransferTask::Status::Done: return "Completado";
-    case TransferTask::Status::Error: return "Error";
-    case TransferTask::Status::Canceled: return "Cancelado";
+    case TransferTask::Status::Queued: return QObject::tr("En cola");
+    case TransferTask::Status::Running: return QObject::tr("En progreso");
+    case TransferTask::Status::Paused: return QObject::tr("Pausado");
+    case TransferTask::Status::Done: return QObject::tr("Completado");
+    case TransferTask::Status::Error: return QObject::tr("Error");
+    case TransferTask::Status::Canceled: return QObject::tr("Cancelado");
   }
   return {};
 }
