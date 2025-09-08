@@ -298,7 +298,8 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
 
         if (check == LIBSSH2_KNOWNHOST_CHECK_MATCH) {
             libssh2_knownhost_free(nh);
-        } else if (opt.known_hosts_policy == openscp::KnownHostsPolicy::AcceptNew && check == LIBSSH2_KNOWNHOST_CHECK_NOTFOUND) {
+        } else if (opt.known_hosts_policy == openscp::KnownHostsPolicy::AcceptNew &&
+                   (check == LIBSSH2_KNOWNHOST_CHECK_NOTFOUND || check == LIBSSH2_KNOWNHOST_CHECK_MISMATCH)) {
             // TOFU: ask the user for confirmation if a callback is available
             std::string algName;
             switch (keytype) {
@@ -354,7 +355,12 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
                 return false;
             }
             int addMask = LIBSSH2_KNOWNHOST_TYPE_PLAIN | LIBSSH2_KNOWNHOST_KEYENC_RAW | alg;
-            int addrc = libssh2_knownhost_addc(nh, opt.host.c_str(), nullptr,
+            // When saving non-default ports, OpenSSH expects the host to be written as "[host]:port"
+            std::string hostForKnown = opt.host;
+            if (opt.port != 22) {
+                hostForKnown = std::string("[") + opt.host + "]:" + std::to_string(opt.port);
+            }
+            int addrc = libssh2_knownhost_addc(nh, hostForKnown.c_str(), nullptr,
                                                hostkey, (size_t)keylen,
                                                nullptr, 0, addMask, nullptr);
             if (addrc != 0 || libssh2_knownhost_writefile(nh, khPath.c_str(), LIBSSH2_KNOWNHOST_FILE_OPENSSH) != 0) {
@@ -365,7 +371,9 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
             libssh2_knownhost_free(nh);
         } else {
             libssh2_knownhost_free(nh);
-            // Only Strict should fail on mismatch or notfound; AcceptNew already handled NOTFOUND above
+            // Policy handling for non-match cases
+            // - Strict: fail on mismatch or notfound
+            // - AcceptNew (TOFU): already handled NOTFOUND/MISMATCH above with user confirmation
             if (opt.known_hosts_policy == openscp::KnownHostsPolicy::Strict) {
                 err = (check == LIBSSH2_KNOWNHOST_CHECK_MISMATCH)
                           ? "Host key no coincide con known_hosts"
