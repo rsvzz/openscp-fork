@@ -1,4 +1,4 @@
-// UI de checkboxes por permisos de usuario/grupo/otros.
+// Checkbox UI for user/group/others permissions.
 #include "PermissionsDialog.hpp"
 #include <QCheckBox>
 #include <QGridLayout>

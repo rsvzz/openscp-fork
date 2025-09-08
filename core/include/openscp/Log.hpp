@@ -1,4 +1,4 @@
-// Utilidad mínima de registro (solo encabezado) para el núcleo de OpenSCP.
+// Minimal logging utility (header-only) for OpenSCP core.
 #pragma once
 #include <cstdio>
 #include <cstdlib>

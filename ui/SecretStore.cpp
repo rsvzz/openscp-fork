@@ -1,4 +1,4 @@
-// Implementación de SecretStore: Keychain (macOS) o fallback opcional con QSettings.
+// SecretStore implementation: Keychain (macOS) or optional fallback with QSettings.
 #include "SecretStore.hpp"
 #include <QSettings>
 #include <QByteArray>
@@ -31,7 +31,7 @@ void SecretStore::setSecret(const QString& key, const QString& value) {
         dataBytes.size()
     );
 
-    // Query para localizar el item existente
+    // Query to locate the existing item
     CFMutableDictionaryRef query = CFDictionaryCreateMutable(
         kCFAllocatorDefault, 0,
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks
@@ -40,7 +40,7 @@ void SecretStore::setSecret(const QString& key, const QString& value) {
     CFDictionarySetValue(query, kSecAttrService, kServiceNameCF());
     CFDictionarySetValue(query, kSecAttrAccount, account);
 
-    // Intentar actualizar
+    // Attempt to update
     CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(
         kCFAllocatorDefault, 0,
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks
@@ -49,9 +49,9 @@ void SecretStore::setSecret(const QString& key, const QString& value) {
     OSStatus st = SecItemUpdate(query, attrs);
 
     if (st == errSecItemNotFound) {
-        // Crear nuevo
+        // Create new item
         CFDictionarySetValue(query, kSecValueData, data);
-        // Accesibilidad opcional: después del primer desbloqueo
+        // Optional accessibility: after first unlock
         CFDictionarySetValue(query, kSecAttrAccessible, kSecAttrAccessibleAfterFirstUnlock);
         (void)SecItemAdd(query, nullptr);
     }
@@ -109,7 +109,7 @@ bool SecretStore::insecureFallbackActive() {
     return false;
 }
 
-#else // non-Apple: fallback inseguro opcional por env var
+#else // non-Apple: optional insecure fallback controlled by env var
 
 static bool fallbackEnabledEnv() {
     const char* v = std::getenv("OPEN_SCP_ENABLE_INSECURE_FALLBACK");
@@ -119,7 +119,7 @@ static bool fallbackEnabledEnv() {
 void SecretStore::setSecret(const QString& key, const QString& value) {
 #ifdef OPEN_SCP_BUILD_SECURE_ONLY
     Q_UNUSED(key); Q_UNUSED(value);
-    return; // deshabilitado por build seguro
+    return; // disabled by secure build
 #else
     if (!fallbackEnabledEnv()) return;
     QSettings s("OpenSCP", "Secrets");

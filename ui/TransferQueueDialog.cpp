@@ -1,4 +1,4 @@
-// Tabla con estado por tarea y acciones (pausar/reanudar/reintentar/limpiar).
+// Table with per-task state and actions (pause/resume/retry/clear).
 #include "TransferQueueDialog.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -19,7 +19,7 @@ TransferQueueDialog::TransferQueueDialog(TransferManager* mgr, QWidget* parent)
 
   auto* lay = new QVBoxLayout(this);
 
-  // Tabla de tareas
+  // Tasks table
   table_ = new QTableWidget(this);
   table_->setColumnCount(6);
   table_->setHorizontalHeaderLabels({ tr("Tipo"), tr("Origen"), tr("Destino"), tr("Estado"), tr("Progreso"), tr("Intentos") });
@@ -32,7 +32,7 @@ TransferQueueDialog::TransferQueueDialog(TransferManager* mgr, QWidget* parent)
   table_->setContextMenuPolicy(Qt::CustomContextMenu);
   lay->addWidget(table_);
 
-  // Fila 1: Controles (solo botones en un renglón)
+  // Row 1: Controls (buttons in a single row)
   auto* controls = new QWidget(this);
   auto* hb = new QHBoxLayout(controls);
   hb->setContentsMargins(0,0,0,0);
@@ -59,7 +59,7 @@ TransferQueueDialog::TransferQueueDialog(TransferManager* mgr, QWidget* parent)
   hb->addStretch();
   lay->addWidget(controls);
 
-  // Fila 2: Ajuste de velocidad global (solo velocidad y aplicar)
+  // Row 2: Global speed setting (speed and apply only)
   auto* speedRow = new QWidget(this);
   auto* hs2 = new QHBoxLayout(speedRow);
   hs2->setContentsMargins(0,0,0,0);
@@ -68,7 +68,7 @@ TransferQueueDialog::TransferQueueDialog(TransferManager* mgr, QWidget* parent)
   speedSpin_->setValue(mgr_->globalSpeedLimitKBps());
   speedSpin_->setSuffix(" KB/s");
   applySpeedBtn_ = new QPushButton(tr("Aplicar vel."), speedRow);
-  // Mover "Limitar sel." junto al control de velocidad
+  // Move "Limit selected" next to the speed control
   limitSelBtn_  = new QPushButton(tr("Limitar sel."), speedRow);
   hs2->addWidget(new QLabel(tr("Velocidad:"), speedRow));
   hs2->addWidget(speedSpin_);
@@ -77,7 +77,7 @@ TransferQueueDialog::TransferQueueDialog(TransferManager* mgr, QWidget* parent)
   hs2->addStretch();
   lay->addWidget(speedRow);
 
-  // Fila de resumen (al pie)
+  // Summary row (bottom)
   auto* summary = new QWidget(this);
   auto* hs = new QHBoxLayout(summary);
   hs->setContentsMargins(0,0,0,0);
@@ -86,7 +86,7 @@ TransferQueueDialog::TransferQueueDialog(TransferManager* mgr, QWidget* parent)
   hs->addWidget(summaryLabel_);
   lay->addWidget(summary);
 
-  // Conexiones
+  // Connections
   connect(applySpeedBtn_, &QPushButton::clicked, this, &TransferQueueDialog::onApplyGlobalSpeed);
   connect(pauseBtn_,  &QPushButton::clicked, this, &TransferQueueDialog::onPause);
   connect(resumeBtn_, &QPushButton::clicked, this, &TransferQueueDialog::onResume);
@@ -100,7 +100,7 @@ TransferQueueDialog::TransferQueueDialog(TransferManager* mgr, QWidget* parent)
   connect(closeBtn_,  &QPushButton::clicked, this, &QDialog::reject);
 
   connect(mgr_, &TransferManager::tasksChanged, this, &TransferQueueDialog::refresh);
-  // Mantener habilitación de botones de selección actualizada
+  // Keep selection-dependent button enablement up to date
   connect(table_->selectionModel(), &QItemSelectionModel::selectionChanged, this, &TransferQueueDialog::updateSummary);
   connect(table_, &QTableWidget::customContextMenuRequested, this, &TransferQueueDialog::showContextMenu);
   refresh();
@@ -210,12 +210,12 @@ void TransferQueueDialog::updateSummary() {
   }
   summaryLabel_->setText(summary);
 
-  // Habilitar/Deshabilitar acciones según estado
+  // Enable/Disable actions based on state
   const bool hasAny = !tasks.isEmpty();
-  const bool canPause = (queued + running) > 0; // hay algo que pausar
-  const bool canResume = queued > 0;            // hay algo en cola para reanudar
-  const bool canRetry = (error + canceled) > 0; // hay fallidos/cancelados
-  const bool canClear = done > 0;               // hay completados que limpiar
+  const bool canPause = (queued + running) > 0; // something to pause
+  const bool canResume = queued > 0;            // something queued to resume
+  const bool canRetry = (error + canceled) > 0; // there are failed/canceled
+  const bool canClear = done > 0;               // there are completed to clear
   const bool hasSel = table_->selectionModel() && table_->selectionModel()->hasSelection();
 
   if (pauseBtn_)  pauseBtn_->setEnabled(hasAny && canPause);
@@ -232,13 +232,13 @@ void TransferQueueDialog::updateSummary() {
 void TransferQueueDialog::showContextMenu(const QPoint& pos) {
   QModelIndex idx = table_->indexAt(pos);
   if (idx.isValid()) {
-    // Si la fila clicada no está seleccionada, seleccionar solo esa
-    if (!table_->selectionModel()->isSelected(idx)) {
-      table_->clearSelection();
-      table_->selectRow(idx.row());
-    }
+    // If the clicked row is not selected, select only that row
+      if (!table_->selectionModel()->isSelected(idx)) {
+        table_->clearSelection();
+        table_->selectRow(idx.row());
+      }
   } else {
-    // click en zona vacía: no mostrar menú
+    // click in empty area: do not show menu
     return;
   }
 

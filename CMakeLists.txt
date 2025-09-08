@@ -58,13 +58,13 @@ if (OPEN_SCP_BUILD_SECURE_ONLY)
   target_compile_definitions(openscp_hello PRIVATE OPEN_SCP_BUILD_SECURE_ONLY=1)
 endif()
 
-# Traducciones (es->en): compilar TS a QM y embeber como recurso.
-# Archivos .ts ahora viven en la carpeta raíz: translations/
+# Translations (es/en): compile TS to QM and embed as a resource.
+# .ts files live in the top-level 'translations/' folder.
 qt_add_translation(QM_FILES
   translations/openscp_es.ts
   translations/openscp_en.ts
 )
-# Establece alias relativos para los recursos, evitando rutas absolutas en el qrc
+# Set relative aliases for resources to avoid absolute paths in the qrc
 set(QM_ES "")
 set(QM_EN "")
 foreach(qm ${QM_FILES})
@@ -85,7 +85,7 @@ qt_add_resources(openscp_hello i18n
   FILES ${QM_FILES}
 )
 
-# Iconos de la aplicación (SVG). Se empaquetan como recursos Qt.
+# Application icons (SVG). Packaged as Qt resources.
 set(ICON_FILES
   icons/using/action-connect.svg
   icons/using/action-copy.svg
@@ -93,6 +93,7 @@ set(ICON_FILES
   icons/using/action-disconnect.svg
   icons/using/action-download.svg
   icons/using/action-go-up.svg
+  icons/using/action-open-about-us.svg
   icons/using/action-move-to-left.svg
   icons/using/action-move-to-right.svg
   icons/using/action-new-file.svg
@@ -106,7 +107,7 @@ set(ICON_FILES
   icons/using/action-upload.svg
 )
 
-# Alias para rutas estables: /icons/using/<nombre>.svg
+# Aliases for stable paths: /icons/using/<name>.svg
 foreach(icon ${ICON_FILES})
   get_filename_component(_name ${icon} NAME)
   set_source_files_properties(${icon} PROPERTIES QT_RESOURCE_ALIAS using/${_name})

@@ -1,4 +1,4 @@
-// Administra sitios guardados con QSettings y SecretStore para credenciales.
+// Manages saved sites with QSettings and SecretStore for credentials.
 #include "SiteManagerDialog.hpp"
 #include "ConnectionDialog.hpp"
 #include <QVBoxLayout>
@@ -13,13 +13,13 @@
 
 SiteManagerDialog::SiteManagerDialog(QWidget* parent) : QDialog(parent) {
     setWindowTitle(tr("Gestor de sitios"));
-    resize(820, 520); // un poco más grande por defecto
+    resize(820, 520); // a bit larger by default
     auto* lay = new QVBoxLayout(this);
     table_ = new QTableWidget(this);
     table_->setColumnCount(3);
     table_->setHorizontalHeaderLabels({ tr("Nombre"), tr("Host"), tr("Usuario") });
     table_->verticalHeader()->setVisible(false);
-    // Priorizar mostrar el nombre: estirar la primera columna; host/usuario al tamaño de su contenido
+    // Prioritize showing the name: stretch first column; host/user sized to contents
     table_->horizontalHeader()->setStretchLastSection(false);
     table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
@@ -47,7 +47,7 @@ SiteManagerDialog::SiteManagerDialog(QWidget* parent) : QDialog(parent) {
     loadSites();
     refresh();
 
-    // Estado inicial: deshabilitar Editar/Eliminar/Conectar si no hay selección
+    // Initial state: disable Edit/Delete/Connect if there is no selection
     updateButtons();
     connect(table_->selectionModel(), &QItemSelectionModel::selectionChanged, this, &SiteManagerDialog::updateButtons);
 }
@@ -63,10 +63,10 @@ void SiteManagerDialog::loadSites() {
         e.opt.host = s.value("host").toString().toStdString();
         e.opt.port = (std::uint16_t)s.value("port", 22).toUInt();
         e.opt.username = s.value("user").toString().toStdString();
-        // Password y passphrase ya no se leen de QSettings; se obtendrán al conectar desde SecretStore
+        // Password and passphrase are no longer read from QSettings; they will be fetched from SecretStore when connecting
         const QString kp = s.value("keyPath").toString();
         if (!kp.isEmpty()) e.opt.private_key_path = kp.toStdString();
-        // keyPass se recuperará dinámicamente
+        // keyPass will be retrieved dynamically
         const QString kh = s.value("knownHosts").toString();
         if (!kh.isEmpty()) e.opt.known_hosts_path = kh.toStdString();
         e.opt.known_hosts_policy = (openscp::KnownHostsPolicy)s.value("khPolicy", (int)openscp::KnownHostsPolicy::Strict).toInt();
@@ -85,7 +85,7 @@ void SiteManagerDialog::saveSites() {
         s.setValue("host", QString::fromStdString(e.opt.host));
         s.setValue("port", (int)e.opt.port);
         s.setValue("user", QString::fromStdString(e.opt.username));
-        // Password y passphrase se almacenan en SecretStore bajo claves derivadas del nombre del sitio
+        // Password and passphrase are stored in SecretStore under keys derived from the site name
         s.setValue("keyPath", e.opt.private_key_path ? QString::fromStdString(*e.opt.private_key_path) : QString());
         s.setValue("knownHosts", e.opt.known_hosts_path ? QString::fromStdString(*e.opt.known_hosts_path) : QString());
         s.setValue("khPolicy", (int)e.opt.known_hosts_policy);
@@ -94,7 +94,7 @@ void SiteManagerDialog::saveSites() {
 }
 
 void SiteManagerDialog::refresh() {
-    // Evitar reordenamiento durante el llenado
+    // Avoid reordering while populating
     const bool wasSorting = table_->isSortingEnabled();
     if (wasSorting) table_->setSortingEnabled(false);
     table_->setRowCount(sites_.size());
@@ -102,7 +102,7 @@ void SiteManagerDialog::refresh() {
         auto* itName = new QTableWidgetItem(sites_[i].name);
         auto* itHost = new QTableWidgetItem(QString::fromStdString(sites_[i].opt.host));
         auto* itUser = new QTableWidgetItem(QString::fromStdString(sites_[i].opt.username));
-        // Guardar índice original para que selección funcione aunque la vista esté ordenada
+        // Store original index so selection works even when the view is sorted
         itName->setData(Qt::UserRole, i);
         itHost->setData(Qt::UserRole, i);
         itUser->setData(Qt::UserRole, i);
@@ -132,7 +132,7 @@ void SiteManagerDialog::onAdd() {
     sites_.push_back(e);
     saveSites();
     refresh();
-    // Guardar secretos
+    // Save secrets
     SecretStore store;
     if (opt.password) store.setSecret(QString("site:%1:password").arg(name), QString::fromStdString(*opt.password));
     if (opt.private_key_passphrase) store.setSecret(QString("site:%1:keypass").arg(name), QString::fromStdString(*opt.private_key_passphrase));
@@ -146,7 +146,7 @@ void SiteManagerDialog::onEdit() {
     if (modelIndex < 0 || modelIndex >= sites_.size()) return;
     SiteEntry e = sites_[modelIndex];
     ConnectionDialog dlg(this);
-    // Precargar opciones del sitio y secretos guardados
+    // Preload site options and stored secrets
     {
         SecretStore store;
         openscp::SessionOptions opt = e.opt;
@@ -163,7 +163,7 @@ void SiteManagerDialog::onEdit() {
     sites_[modelIndex] = e;
     saveSites();
     refresh();
-    // Actualizar secretos
+    // Update secrets
     SecretStore store;
     if (e.opt.password) store.setSecret(QString("site:%1:password").arg(name), QString::fromStdString(*e.opt.password));
     if (e.opt.private_key_passphrase) store.setSecret(QString("site:%1:keypass").arg(name), QString::fromStdString(*e.opt.private_key_passphrase));
@@ -191,7 +191,7 @@ bool SiteManagerDialog::selectedOptions(openscp::SessionOptions& out) const {
     int modelIndex = table_->item(viewRow, 0) ? table_->item(viewRow, 0)->data(Qt::UserRole).toInt() : viewRow;
     if (modelIndex < 0 || modelIndex >= sites_.size()) return false;
     out = sites_[modelIndex].opt;
-    // Rellenar secretos en tiempo de conexión
+    // Fill secrets at connection time
     SecretStore store;
     const QString name = sites_[modelIndex].name;
     bool haveSecret = false;
@@ -204,7 +204,7 @@ bool SiteManagerDialog::selectedOptions(openscp::SessionOptions& out) const {
         haveSecret = true;
     }
     if (!haveSecret) {
-        // Compat: migrar antiguos valores desde QSettings si existen
+        // Compatibility: migrate old values from QSettings if present
         QSettings s("OpenSCP", "OpenSCP");
         int n = s.beginReadArray("sites");
         if (modelIndex >= 0 && modelIndex < n) {

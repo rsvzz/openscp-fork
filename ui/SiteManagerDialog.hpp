@@ -1,4 +1,4 @@
-// Gestor de sitios: listado, alta/edición/eliminación y selección para conectar.
+// Site manager: list, add/edit/remove, and select to connect.
 #pragma once
 #include <QDialog>
 #include <QVector>

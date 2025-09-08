@@ -1,4 +1,4 @@
-// Diálogo para visualizar y gestionar la cola de transferencias.
+// Dialog to visualize and manage the transfer queue.
 #pragma once
 #include <QDialog>
 #include <QTableWidget>
@@ -7,43 +7,43 @@
 class QLabel;
 class QPushButton;
 
-// Diálogo para monitorear y controlar la cola de transferencias.
-// Permite pausar/reanudar, cancelar y limitar la velocidad por tarea.
+// Dialog to monitor and control the transfer queue.
+// Allows pausing/resuming, canceling, and limiting per-task speed.
 class TransferQueueDialog : public QDialog {
     Q_OBJECT
 public:
     explicit TransferQueueDialog(TransferManager* mgr, QWidget* parent = nullptr);
 
 private slots:
-    void refresh();           // refresca la tabla a partir del manager
-    void onPause();           // pausa toda la cola
-    void onResume();          // reanuda la cola (y tareas pausadas)
-    void onRetry();           // reintenta fallidas/canceladas
-    void onClearDone();       // limpia completadas
-    void onPauseSelected();   // pausa tareas seleccionadas
-    void onResumeSelected();  // reanuda tareas seleccionadas
-    void onApplyGlobalSpeed();// aplica límite global
-    void onLimitSelected();   // limita velocidad a seleccionadas
-    void onStopSelected();    // cancela seleccionadas
-    void onStopAll();         // cancela toda la cola en progreso
-    void showContextMenu(const QPoint& pos); // menú contextual sobre la tabla
+    void refresh();           // refresh table from manager
+    void onPause();           // pause the whole queue
+    void onResume();          // resume the queue (and paused tasks)
+    void onRetry();           // retry failed/canceled
+    void onClearDone();       // clear completed
+    void onPauseSelected();   // pause selected tasks
+    void onResumeSelected();  // resume selected tasks
+    void onApplyGlobalSpeed();// apply global limit
+    void onLimitSelected();   // limit selected tasks
+    void onStopSelected();    // cancel selected tasks
+    void onStopAll();         // cancel the whole queue in progress
+    void showContextMenu(const QPoint& pos); // context menu on the table
 
 private:
     void updateSummary();
 
-    TransferManager* mgr_;             // fuente de verdad de la cola
-    QTableWidget* table_;              // tabla de tareas
-    QLabel* summaryLabel_ = nullptr;   // resumen al pie
-    QPushButton* pauseBtn_ = nullptr;  // pausa global
-    QPushButton* resumeBtn_ = nullptr; // reanuda global
-    QPushButton* retryBtn_ = nullptr;  // reintentar
-    QPushButton* clearBtn_ = nullptr;  // limpiar completados
-    QPushButton* closeBtn_ = nullptr;  // cerrar diálogo
-    QPushButton* pauseSelBtn_ = nullptr;   // pausa sel.
-    QPushButton* resumeSelBtn_ = nullptr;  // reanuda sel.
-    QPushButton* limitSelBtn_ = nullptr;   // limitar sel.
-    QPushButton* stopSelBtn_ = nullptr;    // cancelar sel.
-    QPushButton* stopAllBtn_ = nullptr;    // cancelar global
-    class QSpinBox* speedSpin_ = nullptr;  // valor límite global
-    QPushButton* applySpeedBtn_ = nullptr; // aplicar límite global
+    TransferManager* mgr_;             // source of truth for the queue
+    QTableWidget* table_;              // table of tasks
+    QLabel* summaryLabel_ = nullptr;   // summary at the bottom
+    QPushButton* pauseBtn_ = nullptr;  // global pause
+    QPushButton* resumeBtn_ = nullptr; // global resume
+    QPushButton* retryBtn_ = nullptr;  // retry
+    QPushButton* clearBtn_ = nullptr;  // clear completed
+    QPushButton* closeBtn_ = nullptr;  // close dialog
+    QPushButton* pauseSelBtn_ = nullptr;   // pause selected
+    QPushButton* resumeSelBtn_ = nullptr;  // resume selected
+    QPushButton* limitSelBtn_ = nullptr;   // limit selected
+    QPushButton* stopSelBtn_ = nullptr;    // cancel selected
+    QPushButton* stopAllBtn_ = nullptr;    // cancel all
+    class QSpinBox* speedSpin_ = nullptr;  // global limit value
+    QPushButton* applySpeedBtn_ = nullptr; // apply global limit
 }; 

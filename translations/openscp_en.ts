@@ -19,6 +19,10 @@
       <source>Autor: &lt;a href="https://github.com/luiscuellar31"&gt;luiscuellar31&lt;/a&gt;</source>
       <translation>Author: &lt;a href="https://github.com/luiscuellar31"&gt;luiscuellar31&lt;/a&gt;</translation>
     </message>
+    <message>
+      <source>Informar de un error</source>
+      <translation>Report an issue</translation>
+    </message>
   </context>
   <context>
     <name>ConnectionDialog</name>
@@ -802,6 +806,10 @@ Overwrite?</translation>
       <translation>Settings</translation>
     </message>
     <message>
+      <source>Ajustes</source>
+      <translation>Settings</translation>
+    </message>
+    <message>
       <source>Tema:</source>
       <translation>Theme:</translation>
     </message>
@@ -848,6 +856,14 @@ Overwrite?</translation>
     <message>
       <source>Mostrar ventana de conexión al inicio y cuando se cierre la última sesión.</source>
       <translation>Show connection window on startup and when the last session closes.</translation>
+    </message>
+    <message>
+      <source>Cerrar</source>
+      <translation>Close</translation>
+    </message>
+    <message>
+      <source>Aplicar</source>
+      <translation>Apply</translation>
     </message>
   </context>
 </TS>

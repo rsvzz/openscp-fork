@@ -1,4 +1,4 @@
-// Implementación de la cola: gestiona una tarea a la vez con progreso y colisiones.
+// Queue implementation: manages one task at a time with progress and collision handling.
 #include "TransferManager.hpp"
 #include "openscp/SftpClient.hpp"
 #include <QApplication>
@@ -25,7 +25,7 @@ TransferManager::~TransferManager() {
 }
 
 void TransferManager::clearClient() {
-    // Señalar pausa para que el worker coopere y termine
+    // Signal pause so workers cooperate and finish
     paused_ = true;
     for (auto& kv : workers_) {
         if (kv.second.joinable()) kv.second.join();
@@ -41,9 +41,9 @@ void TransferManager::enqueueUpload(const QString& local, const QString& remote)
     t.src = local;
     t.dst = remote;
     {
-        // proteger estructura
-        // (otras funciones accederán concurrentemente)
-        // mtx_ protege tasks_
+        // Protect the structure
+        // (other functions will access concurrently)
+        // mtx_ protects tasks_
         std::lock_guard<std::mutex> lk(mtx_);
         tasks_.push_back(t);
     }
@@ -88,7 +88,7 @@ void TransferManager::resumeAll() {
 }
 
 void TransferManager::cancelAll() {
-    // Marca todas las tareas como detenidas y solicita cancelación cooperativa
+    // Mark all tasks as stopped and request cooperative cancellation
     {
         std::lock_guard<std::mutex> lk(mtx_);
         for (auto& t : tasks_) {
@@ -128,14 +128,14 @@ void TransferManager::clearCompleted() {
 }
 
 void TransferManager::processNext() {
-    // delega en el planificador concurrente
+    // Delegate to the concurrent scheduler
     schedule();
 }
 
 void TransferManager::schedule() {
     if (paused_ || !client_) return;
 
-    // Resolución de colisiones previa y lanzamiento hasta maxConcurrent_
+    // Pre-resolve collisions and launch up to maxConcurrent_
     auto askOverwrite = [&](const QString& name, const QString& srcInfo, const QString& dstInfo) -> int {
         QMessageBox msg(nullptr);
         msg.setWindowTitle(tr("Conflicto"));
@@ -150,7 +150,7 @@ void TransferManager::schedule() {
     };
 
     while (running_.load() < maxConcurrent_) {
-        // localizar próxima tarea en cola
+        // Locate next queued task
         TransferTask t;
         int idx = -1;
         {
@@ -173,9 +173,9 @@ void TransferManager::schedule() {
 
         bool resume = t.resumeHint;
 
-        // Pre-resolución de colisiones
+        // Pre-resolution of collisions
         if (t.type == TransferTask::Type::Upload) {
-            // ¿existe remoto?
+            // Does remote exist?
             bool isDir = false;
             std::string sErr;
             bool ex = false;
@@ -213,7 +213,7 @@ void TransferManager::schedule() {
                 resume = (choice == 2);
             }
 
-            // asegurar directorios remotos padre
+                // Ensure remote parent directories exist
             auto ensureRemoteDir = [&](const QString& dir) -> bool {
                 if (dir.isEmpty()) return true;
                 QString cur = "/";
@@ -238,7 +238,7 @@ void TransferManager::schedule() {
             QString parentDir = QFileInfo(t.dst).path();
             if (!parentDir.isEmpty()) ensureRemoteDir(parentDir);
         } else {
-            // Download: colisión local
+            // Download: local collision
             QFileInfo lfi(t.dst);
             if (lfi.exists()) {
                 openscp::FileInfo rinfo{};
@@ -265,15 +265,15 @@ void TransferManager::schedule() {
             QDir().mkpath(QFileInfo(t.dst).dir().absolutePath());
         }
 
-        // Lanzar worker para ejecutar la transferencia
+        // Launch worker to execute the transfer
         running_.fetch_add(1);
         const quint64 taskId = t.id;
-        // Limpia cualquier worker previo con el mismo id (no debería ocurrir)
+        // Clean any previous worker with the same id (should not happen)
         if (workers_.count(taskId) && workers_[taskId].joinable()) {
             workers_[taskId].join();
         }
         workers_[taskId] = std::thread([this, t, taskId, resume]() mutable {
-            // Intentar reconectar si hace falta
+            // Try to reconnect if needed
             std::string err;
             if (!ensureConnected(err)) {
                 {
@@ -283,12 +283,12 @@ void TransferManager::schedule() {
                 }
                 emit tasksChanged();
                 running_.fetch_sub(1);
-                // Replanificar en el hilo de la GUI
+                // Reschedule on the GUI thread
                 QMetaObject::invokeMethod(this, "schedule", Qt::QueuedConnection);
                 return;
             }
 
-            // Marcar intento
+            // Mark attempt
             {
                 std::lock_guard<std::mutex> lk(mtx_);
                 int i = indexForId(taskId);
@@ -311,7 +311,7 @@ void TransferManager::schedule() {
                 return false;
             };
 
-            // Control de velocidad (por tarea y global): usar bucket simple
+            // Speed control (per task and global): simple bucket-based throttling
             using clock = std::chrono::steady_clock;
             static constexpr double KIB = 1024.0;
             std::size_t lastDone = 0;
@@ -325,8 +325,8 @@ void TransferManager::schedule() {
                 }
                 emit tasksChanged();
 
-                // Throttling: dormir si excedemos el límite efectivo
-                int taskLimit = 0; // KB/s (0 = sin límite)
+                // Throttling: sleep if exceeding the effective limit
+                int taskLimit = 0; // KB/s (0 = unlimited)
                 int globalLimit = globalSpeedKBps_.load();
                 {
                     std::lock_guard<std::mutex> lk(mtx_);
@@ -343,7 +343,7 @@ void TransferManager::schedule() {
                     const double elapsedSec = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTick).count();
                     if (elapsedSec < expectedSec) {
                         const double sleepSec = expectedSec - elapsedSec;
-                        if (sleepSec > 0.0005) { // evita sleeps ultra cortos
+                        if (sleepSec > 0.0005) { // avoid ultra-short sleeps
                             std::this_thread::sleep_for(std::chrono::duration<double>(sleepSec));
                         }
                     }
@@ -354,14 +354,14 @@ void TransferManager::schedule() {
 
             bool ok = false;
             if (t.type == TransferTask::Type::Upload) {
-                // Subida local->remoto
+                // Upload local->remote
                 std::string perr;
                 {
                     std::lock_guard<std::mutex> slk(sftpMutex_);
                     ok = client_->put(t.src.toStdString(), t.dst.toStdString(), perr, progress, shouldCancel, resume);
                 }
                 if (!ok && shouldCancel()) {
-                    // Pausado o cancelado
+                    // Paused or canceled
                     std::lock_guard<std::mutex> lk(mtx_);
                     int i = indexForId(taskId);
                     if (i >= 0) tasks_[i].status = isCanceled() ? TransferTask::Status::Canceled : TransferTask::Status::Paused;
@@ -375,7 +375,7 @@ void TransferManager::schedule() {
                     if (i >= 0) { tasks_[i].progress = 100; tasks_[i].status = TransferTask::Status::Done; }
                 }
             } else {
-                // Descarga remoto->local
+                // Download remote->local
                 std::string gerr;
                 {
                     std::lock_guard<std::mutex> slk(sftpMutex_);
@@ -419,7 +419,7 @@ bool TransferManager::ensureConnected(std::string& err) {
         err = "Sin opciones de sesión";
         return false;
     }
-    // Intentar reconectar con backoff exponencial
+    // Try reconnecting with exponential backoff
     using namespace std::chrono_literals;
     for (int i = 0; i < 3; ++i) {
         std::this_thread::sleep_for((1 << i) * 500ms);

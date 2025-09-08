@@ -1,4 +1,4 @@
-// Diálogo simple para editar permisos (modo POSIX) y marcar aplicación recursiva.
+// Simple dialog to edit permissions (POSIX mode) and mark recursive application.
 #pragma once
 #include <QDialog>
 

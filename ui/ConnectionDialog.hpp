@@ -1,4 +1,4 @@
-// Diálogo para capturar opciones de conexión SFTP (host/puerto/usuario/clave/known_hosts).
+// Dialog to capture SFTP connection options (host/port/user/key/known_hosts).
 #pragma once
 #include <QDialog>
 #include "openscp/SftpTypes.hpp"
@@ -20,8 +20,8 @@ private:
     QSpinBox* port_ = nullptr;
     QLineEdit* user_ = nullptr;
     QLineEdit* pass_ = nullptr;
-    QLineEdit* keyPath_ = nullptr;   // ruta a ~/.ssh/id_ed25519 o similar
-    QLineEdit* keyPass_ = nullptr;   // passphrase de la clave (si tiene)
+    QLineEdit* keyPath_ = nullptr;   // path to ~/.ssh/id_ed25519 or similar
+    QLineEdit* keyPass_ = nullptr;   // key passphrase (if any)
 
     // known_hosts
     QLineEdit* khPath_ = nullptr;

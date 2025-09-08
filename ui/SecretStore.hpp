@@ -1,24 +1,24 @@
-// Abstracción de almacenamiento de secretos para la UI.
-// En macOS usa Keychain; en otros SO puede habilitarse un fallback inseguro con env var.
+// Secret storage abstraction for the UI.
+// On macOS uses Keychain; on other OSes an insecure fallback may be enabled via env var.
 #pragma once
 #include <QString>
 #include <optional>
 
-// Abstracción mínima de almacén de secretos.
-// Implementación actual: fallback con QSettings (no seguro),
-// diseñada para poder migrar a Keychain (macOS) / Secret Service (Linux).
+// Minimal secret store abstraction.
+// Current implementation: fallback with QSettings (not secure),
+// designed to be replaceable by Keychain (macOS) / Secret Service (Linux).
 class SecretStore {
 public:
-    // Guarda un secreto asociado a una clave lógica (p.ej. "site:Nombre:password").
+    // Store a secret under a logical key (e.g. "site:Name:password").
     void setSecret(const QString& key, const QString& value);
 
-    // Recupera un secreto si existe.
+    // Retrieve a secret if present.
     std::optional<QString> getSecret(const QString& key) const;
 
-    // Elimina un secreto (opcional).
+    // Remove a secret (optional).
     void removeSecret(const QString& key);
 
-    // Indica si está activo el fallback inseguro (solo para entornos sin Keychain/Secret Service).
-    // En macOS siempre devuelve false. En otros SO depende del macro de build y de la variable de entorno.
+    // Whether the insecure fallback is active (only for environments without Keychain/Secret Service).
+    // On macOS always returns false. On other OSes depends on build macro and env var.
     static bool insecureFallbackActive();
 };

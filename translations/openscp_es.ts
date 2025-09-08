@@ -19,6 +19,10 @@
       <source>Autor: &lt;a href="https://github.com/luiscuellar31"&gt;luiscuellar31&lt;/a&gt;</source>
       <translation>Autor: &lt;a href="https://github.com/luiscuellar31"&gt;luiscuellar31&lt;/a&gt;</translation>
     </message>
+    <message>
+      <source>Informar de un error</source>
+      <translation>Informar de un error</translation>
+    </message>
   </context>
   <context>
     <name>ConnectionDialog</name>
@@ -753,6 +757,10 @@ Huella: %4
       <translation>Configuración</translation>
     </message>
     <message>
+      <source>Ajustes</source>
+      <translation>Ajustes</translation>
+    </message>
+    <message>
       <source>Tema:</source>
       <translation>Tema:</translation>
     </message>
@@ -799,6 +807,14 @@ Huella: %4
     <message>
       <source>Mostrar ventana de conexión al inicio y cuando se cierre la última sesión.</source>
       <translation>Mostrar ventana de conexión al inicio y cuando se cierre la última sesión.</translation>
+    </message>
+    <message>
+      <source>Cerrar</source>
+      <translation>Cerrar</translation>
+    </message>
+    <message>
+      <source>Aplicar</source>
+      <translation>Aplicar</translation>
     </message>
   </context>
 </TS>

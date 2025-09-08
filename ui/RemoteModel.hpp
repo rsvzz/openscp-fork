@@ -1,4 +1,4 @@
-// Modelo de solo-lectura para listar entradas remotas vía SftpClient.
+// Read-only model to list remote entries via SftpClient.
 #pragma once
 #include <QAbstractTableModel>
 #include <vector>
@@ -20,7 +20,7 @@ public:
     Qt::DropActions supportedDragActions() const override { return Qt::CopyAction; }
     void sort(int column, Qt::SortOrder order) override;
 
-    // Fija el directorio remoto actual y actualiza filas.
+    // Set the current remote directory and refresh rows.
     bool setRootPath(const QString& path, QString* errorOut = nullptr);
     QString rootPath() const { return currentPath_; }
 
@@ -42,5 +42,5 @@ private:
         quint32 gid;
     };
     std::vector<Item> items_;
-    bool showHidden_ = false; // ocultar nombres que empiezan por '.' si es false
+    bool showHidden_ = false; // hide names starting with '.' if false
 };

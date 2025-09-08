@@ -1,6 +1,6 @@
-// Ventana principal de OpenSCP: gestor de archivos de dos paneles con soporte SFTP.
-// Ofrece operaciones locales (copiar/mover/borrar) y remotas (navegar, subir, descargar,
-// crear/renombrar/borrar), cola de transferencias con reanudación y validación de known_hosts.
+// OpenSCP main window: dual‑pane file manager with SFTP support.
+// Provides local operations (copy/move/delete) and remote ones (browse, upload, download,
+// create/rename/delete), a transfer queue with resume, and known_hosts validation.
 #include "MainWindow.hpp"
 #include "openscp/Libssh2SftpClient.hpp"
 #include "ConnectionDialog.hpp"
@@ -55,6 +55,7 @@
 #include <QTimer>
 #include <QSet>
 #include <QHash>
+#include <QShortcut>
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -62,15 +63,15 @@
 
 static constexpr int NAME_COL = 0;
 
-MainWindow::~MainWindow() = default; // <- define el destructor aquí
+MainWindow::~MainWindow() = default; // define the destructor here
 
-// Copia recursivamente un archivo o carpeta.
-// Devuelve true si todo salió bien; en caso contrario, false y escribe el error.
+// Recursively copy a file or directory.
+// Returns true on success; otherwise false and writes an error message.
 static bool copyEntryRecursively(const QString& srcPath, const QString& dstPath, QString& error) {
     QFileInfo srcInfo(srcPath);
 
     if (srcInfo.isFile()) {
-        // Asegura carpeta destino
+        // Ensure destination directory
         QDir().mkpath(QFileInfo(dstPath).dir().absolutePath());
         if (QFile::exists(dstPath)) QFile::remove(dstPath);
         if (!QFile::copy(srcPath, dstPath)) {
@@ -81,12 +82,12 @@ static bool copyEntryRecursively(const QString& srcPath, const QString& dstPath,
     }
 
     if (srcInfo.isDir()) {
-        // Crea carpeta destino
+        // Create destination directory
         if (!QDir().mkpath(dstPath)) {
             error = QString(QCoreApplication::translate("MainWindow", "No se pudo crear carpeta destino: %1")).arg(dstPath);
             return false;
         }
-        // Itera recursivo
+        // Iterate recursively
         QDirIterator it(srcPath, QDir::NoDotAndDotDot | QDir::AllEntries, QDirIterator::Subdirectories);
         while (it.hasNext()) {
             it.next();
@@ -100,7 +101,7 @@ static bool copyEntryRecursively(const QString& srcPath, const QString& dstPath,
                     return false;
                 }
             } else {
-                // Asegura carpeta contenedora
+                // Ensure parent directory exists
                 QDir().mkpath(QFileInfo(target).dir().absolutePath());
                 if (QFile::exists(target)) QFile::remove(target);
                 if (!QFile::copy(fi.absoluteFilePath(), target)) {
@@ -116,7 +117,7 @@ static bool copyEntryRecursively(const QString& srcPath, const QString& dstPath,
     return false;
 }
 
-// Calcula un path local temporal para previsualizar/abrir descargas puntuales.
+// Compute a temporary local path to preview/open ad‑hoc downloads.
 static QString tempDownloadPathFor(const QString& remoteName) {
     QString base = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
     if (base.isEmpty()) base = QDir::homePath() + "/Downloads";
@@ -124,7 +125,7 @@ static QString tempDownloadPathFor(const QString& remoteName) {
     return QDir(base).filePath(remoteName);
 }
 
-// Valida nombres simples de archivo/carpeta (sin rutas)
+// Validate simple file/folder names (no paths)
 static bool isValidEntryName(const QString& name, QString* why = nullptr) {
     if (name == "." || name == "..") {
         if (why) *why = QCoreApplication::translate("MainWindow", "Nombre inválido: no puede ser '.' ni '..'.");
@@ -138,33 +139,33 @@ static bool isValidEntryName(const QString& name, QString* why = nullptr) {
 }
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
-    // Centrado global de cuadros de diálogo respecto a la ventana principal
+    // Globally center dialogs relative to the main window
     qApp->installEventFilter(this);
-    // Modelos
+    // Models
     leftModel_       = new QFileSystemModel(this);
     rightLocalModel_ = new QFileSystemModel(this);
 
     leftModel_->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::AllDirs);
     rightLocalModel_->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::AllDirs);
 
-    // Rutas iniciales: HOME
+    // Initial paths: HOME
     const QString home = QDir::homePath();
     leftModel_->setRootPath(home);
     rightLocalModel_->setRootPath(home);
 
-    // Vistas
+    // Views
     leftView_  = new QTreeView(this);
     rightView_ = new QTreeView(this);
 
     leftView_->setModel(leftModel_);
     rightView_->setModel(rightLocalModel_);
-    // Evitar expandir subárbol con doble clic; usaremos navegación por cambio de raíz
+    // Avoid expanding subtrees on double‑click; navigate by changing root
     leftView_->setExpandsOnDoubleClick(false);
     rightView_->setExpandsOnDoubleClick(false);
     leftView_->setRootIndex(leftModel_->index(home));
     rightView_->setRootIndex(rightLocalModel_->index(home));
 
-    // Ajustes visuales básicos
+    // Basic view tuning
     auto tuneView = [](QTreeView* v) {
         v->setSelectionMode(QAbstractItemView::ExtendedSelection);
         v->setSortingEnabled(true);
@@ -175,9 +176,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     tuneView(leftView_);
     tuneView(rightView_);
     leftView_->setDragEnabled(true);
-    rightView_->setDragEnabled(true); // permitir iniciar arrastres desde panel derecho
+    rightView_->setDragEnabled(true); // allow starting drags from right pane
 
-    // Aceptar drops en ambos paneles
+    // Accept drops on both panes
     rightView_->setAcceptDrops(true);
     rightView_->setDragDropMode(QAbstractItemView::DragDrop);
     rightView_->viewport()->setAcceptDrops(true);
@@ -186,17 +187,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     leftView_->setDragDropMode(QAbstractItemView::DragDrop);
     leftView_->viewport()->setAcceptDrops(true);
     leftView_->setDefaultDropAction(Qt::CopyAction);
-    // Filtros en los viewports para recibir arrastre/soltar
+    // Install event filters on viewports to receive drag/drop
     rightView_->viewport()->installEventFilter(this);
     leftView_->viewport()->installEventFilter(this);
 
-    // Entradas de ruta (arriba)
+    // Path entries (top)
     leftPath_  = new QLineEdit(home, this);
     rightPath_ = new QLineEdit(home, this);
     connect(leftPath_,  &QLineEdit::returnPressed, this, &MainWindow::leftPathEntered);
     connect(rightPath_, &QLineEdit::returnPressed, this, &MainWindow::rightPathEntered);
 
-    // Splitter central con dos paneles
+    // Central splitter with two panes
     auto* splitter = new QSplitter(this);
     auto* leftPane  = new QWidget(this);
     auto* rightPane = new QWidget(this);
@@ -206,19 +207,19 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     leftLayout->setContentsMargins(0, 0, 0, 0);
     rightLayout->setContentsMargins(0, 0, 0, 0);
 
-    // Sub-toolbar del panel izquierdo
+    // Left pane sub‑toolbar
     leftPaneBar_ = new QToolBar("LeftBar", leftPane);
     leftPaneBar_->setIconSize(QSize(18, 18));
     leftPaneBar_->setToolButtonStyle(Qt::ToolButtonIconOnly);
-    // Helper de iconos desde recursos locales
+    // Helper for icons from local resources
     auto resIcon = [](const char* fname) -> QIcon {
         return QIcon(QStringLiteral(":/icons/using/") + QLatin1String(fname));
     };
-    // Sub-toolbar izquierda: Arriba, Copiar, Mover, Borrar, Renombrar, Nueva carpeta
+    // Left sub‑toolbar: Up, Copy, Move, Delete, Rename, New folder
     actUpLeft_ = leftPaneBar_->addAction(tr("Arriba"), this, &MainWindow::goUpLeft);
     actUpLeft_->setIcon(resIcon("action-go-up.svg"));
     actUpLeft_->setToolTip(actUpLeft_->text());
-    // Botón "Abrir carpeta izquierda" junto a Arriba
+    // Button "Open left folder" next to Up
     actChooseLeft_ = leftPaneBar_->addAction(tr("Abrir carpeta izquierda"), this, &MainWindow::chooseLeftDir);
     actChooseLeft_->setIcon(resIcon("action-open-folder.svg"));
     actChooseLeft_->setToolTip(actChooseLeft_->text());
@@ -226,24 +227,32 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     actCopyF5_ = leftPaneBar_->addAction(tr("Copiar"), this, &MainWindow::copyLeftToRight);
     actCopyF5_->setIcon(resIcon("action-copy.svg"));
     actCopyF5_->setToolTip(actCopyF5_->text());
+    // Shortcut F5 on left panel (scope: left view and its children)
+    actCopyF5_->setShortcut(QKeySequence(Qt::Key_F5));
+    actCopyF5_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    if (leftView_) leftView_->addAction(actCopyF5_);
     actMoveF6_ = leftPaneBar_->addAction(tr("Mover"), this, &MainWindow::moveLeftToRight);
     actMoveF6_->setIcon(resIcon("action-move-to-right.svg"));
     actMoveF6_->setToolTip(actMoveF6_->text());
+    // Shortcut F6 on left panel
+    actMoveF6_->setShortcut(QKeySequence(Qt::Key_F6));
+    actMoveF6_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    if (leftView_) leftView_->addAction(actMoveF6_);
     actDelete_ = leftPaneBar_->addAction(tr("Borrar"), this, &MainWindow::deleteFromLeft);
     actDelete_->setIcon(resIcon("action-delete.svg"));
     actDelete_->setToolTip(actDelete_->text());
     actDelete_->setShortcut(QKeySequence(Qt::Key_Delete));
     actDelete_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     if (leftView_) leftView_->addAction(actDelete_);
-    // Acción de copiar desde panel derecho a izquierdo (remoto/local -> izquierdo)
+    // Action: copy from right panel to left (remote/local -> left)
     actCopyRight_ = new QAction(tr("Copiar al panel izquierdo"), this);
     connect(actCopyRight_, &QAction::triggered, this, &MainWindow::copyRightToLeft);
     actCopyRight_->setIcon(QIcon(QLatin1String(":/icons/using/action-copy.svg")));
-    // Acción de mover desde panel derecho al izquierdo
+    // Action: move from right panel to left
     actMoveRight_ = new QAction(tr("Mover al panel izquierdo"), this);
     connect(actMoveRight_, &QAction::triggered, this, &MainWindow::moveRightToLeft);
     actMoveRight_->setIcon(QIcon(QLatin1String(":/icons/using/action-move-to-left.svg")));
-    // Acciones locales adicionales (también en toolbar)
+    // Additional local actions (also in toolbar)
     actNewDirLeft_  = new QAction(tr("Nueva carpeta"), this);
     connect(actNewDirLeft_, &QAction::triggered, this, &MainWindow::newDirLeft);
     actRenameLeft_  = new QAction(tr("Renombrar"), this);
@@ -256,31 +265,41 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     actNewDirLeft_->setToolTip(actNewDirLeft_->text());
     actNewFileLeft_->setIcon(resIcon("action-new-file.svg"));
     actNewFileLeft_->setToolTip(actNewFileLeft_->text());
+    // Shortcuts (left panel scope)
+    actRenameLeft_->setShortcut(QKeySequence(Qt::Key_F2));
+    actRenameLeft_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    if (leftView_) leftView_->addAction(actRenameLeft_);
+    actNewDirLeft_->setShortcut(QKeySequence(Qt::Key_F9));
+    actNewDirLeft_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    if (leftView_) leftView_->addAction(actNewDirLeft_);
+    actNewFileLeft_->setShortcut(QKeySequence(Qt::Key_F10));
+    actNewFileLeft_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    if (leftView_) leftView_->addAction(actNewFileLeft_);
     leftPaneBar_->addAction(actRenameLeft_);
     leftPaneBar_->addAction(actNewFileLeft_);
     leftPaneBar_->addAction(actNewDirLeft_);
     leftLayout->addWidget(leftPaneBar_);
 
-    // Panel izquierdo: toolbar -> path -> view
+    // Left panel: toolbar -> path -> view
     leftLayout->addWidget(leftPath_);
     leftLayout->addWidget(leftView_);
 
-    // Sub-toolbar del panel derecho
+    // Right pane sub‑toolbar
     rightPaneBar_ = new QToolBar("RightBar", rightPane);
     rightPaneBar_->setIconSize(QSize(18, 18));
     rightPaneBar_->setToolButtonStyle(Qt::ToolButtonIconOnly);
     actUpRight_ = rightPaneBar_->addAction(tr("Arriba"), this, &MainWindow::goUpRight);
     actUpRight_->setIcon(resIcon("action-go-up.svg"));
     actUpRight_->setToolTip(actUpRight_->text());
-    // Botón "Abrir carpeta derecha" junto a Arriba
+    // Button "Open right folder" next to Up
     actChooseRight_  = rightPaneBar_->addAction(tr("Abrir carpeta derecha"),    this, &MainWindow::chooseRightDir);
     actChooseRight_->setIcon(resIcon("action-open-folder.svg"));
     actChooseRight_->setToolTip(actChooseRight_->text());
 
-    // Acciones del panel derecho (crear primero, agregar luego en orden solicitado)
+    // Right panel actions (create first, then add in requested order)
     actDownloadF7_ = new QAction(tr("Descargar"), this);
     connect(actDownloadF7_, &QAction::triggered, this, &MainWindow::downloadRightToLeft);
-    actDownloadF7_->setEnabled(false);   // empieza deshabilitado en local
+    actDownloadF7_->setEnabled(false);   // starts disabled on local
     actDownloadF7_->setIcon(resIcon("action-download.svg"));
     actDownloadF7_->setToolTip(actDownloadF7_->text());
 
@@ -288,6 +307,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(actUploadRight_, &QAction::triggered, this, &MainWindow::uploadViaDialog);
     actUploadRight_->setIcon(resIcon("action-upload.svg"));
     actUploadRight_->setToolTip(actUploadRight_->text());
+    // Shortcut F8 on right panel to upload via dialog (remote only)
+    actUploadRight_->setShortcut(QKeySequence(Qt::Key_F8));
+    actUploadRight_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    if (rightView_) rightView_->addAction(actUploadRight_);
 
     actNewDirRight_  = new QAction(tr("Nueva carpeta"), this);
     connect(actNewDirRight_,  &QAction::triggered, this, &MainWindow::newDirRight);
@@ -305,10 +328,20 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     actDeleteRight_->setToolTip(actDeleteRight_->text());
     actNewFileRight_->setIcon(resIcon("action-new-file.svg"));
     actNewFileRight_->setToolTip(actNewFileRight_->text());
+    // Shortcuts (right panel scope)
+    actRenameRight_->setShortcut(QKeySequence(Qt::Key_F2));
+    actRenameRight_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    if (rightView_) rightView_->addAction(actRenameRight_);
+    actNewDirRight_->setShortcut(QKeySequence(Qt::Key_F9));
+    actNewDirRight_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    if (rightView_) rightView_->addAction(actNewDirRight_);
+    actNewFileRight_->setShortcut(QKeySequence(Qt::Key_F10));
+    actNewFileRight_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    if (rightView_) rightView_->addAction(actNewFileRight_);
 
-    // Orden: Copiar, Mover, Borrar, Renombrar, Nueva carpeta, luego Descargar/Subir
+    // Order: Copy, Move, Delete, Rename, New folder, then Download/Upload
     rightPaneBar_->addSeparator();
-    // Botones de toolbar con textos genéricos (Copiar/Mover)
+    // Toolbar buttons with generic texts (Copy/Move)
     actCopyRightTb_ = new QAction(tr("Copiar"), this);
     connect(actCopyRightTb_, &QAction::triggered, this, &MainWindow::copyRightToLeft);
     actMoveRightTb_ = new QAction(tr("Mover"), this);
@@ -317,6 +350,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     actCopyRightTb_->setToolTip(actCopyRightTb_->text());
     actMoveRightTb_->setIcon(resIcon("action-move-to-left.svg"));
     actMoveRightTb_->setToolTip(actMoveRightTb_->text());
+    // Shortcuts F5/F6 on right panel (scope: right view)
+    actCopyRightTb_->setShortcut(QKeySequence(Qt::Key_F5));
+    actCopyRightTb_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    if (rightView_) rightView_->addAction(actCopyRightTb_);
+    actMoveRightTb_->setShortcut(QKeySequence(Qt::Key_F6));
+    actMoveRightTb_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    if (rightView_) rightView_->addAction(actMoveRightTb_);
     rightPaneBar_->addAction(actCopyRightTb_);
     rightPaneBar_->addAction(actMoveRightTb_);
     rightPaneBar_->addAction(actDeleteRight_);
@@ -326,37 +366,51 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     rightPaneBar_->addSeparator();
     rightPaneBar_->addAction(actDownloadF7_);
     rightPaneBar_->addAction(actUploadRight_);
-    // Atajo Supr también en el panel derecho (limitado al widget del panel derecho)
+    // Delete shortcut also on right panel (limited to right panel widget)
     if (actDeleteRight_) {
         actDeleteRight_->setShortcut(QKeySequence(Qt::Key_Delete));
         actDeleteRight_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
         if (rightView_) rightView_->addAction(actDeleteRight_);
     }
-    // Deshabilitar solo acciones estrictamente remotas al inicio
+    // Keyboard shortcut F7 on right panel: only acts when remote and with selection
+    if (rightView_) {
+        auto* scF7 = new QShortcut(QKeySequence(Qt::Key_F7), rightView_);
+        scF7->setContext(Qt::WidgetWithChildrenShortcut);
+        connect(scF7, &QShortcut::activated, this, [this] {
+            if (!rightIsRemote_) return; // only when remote
+            auto sel = rightView_->selectionModel();
+            if (!sel || sel->selectedRows(NAME_COL).isEmpty()) {
+                statusBar()->showMessage(tr("Selecciona elementos para descargar"), 2000);
+                return;
+            }
+            downloadRightToLeft();
+        });
+    }
+    // Disable strictly-remote actions at startup
     if (actDownloadF7_) actDownloadF7_->setEnabled(false);
     actUploadRight_->setEnabled(false);
     if (actNewFileRight_) actNewFileRight_->setEnabled(false);
 
-    // Panel derecho: toolbar -> path -> view
+    // Right panel: toolbar -> path -> view
     rightLayout->addWidget(rightPaneBar_);
     rightLayout->addWidget(rightPath_);
     rightLayout->addWidget(rightView_);
 
-    // Montar paneles en el splitter
+    // Mount panes into the splitter
     splitter->addWidget(leftPane);
     splitter->addWidget(rightPane);
     setCentralWidget(splitter);
 
-    // Toolbar principal (superior)
+    // Main toolbar (top)
     auto* tb = addToolBar("Main");
     tb->setToolButtonStyle(Qt::ToolButtonIconOnly);
     tb->setMovable(false);
-    // Mantener tamaño predeterminado del sistema para la principal y ajustar sub‑toolbars un poco más pequeñas
+    // Keep the system default size for the main toolbar and make sub‑toolbars slightly smaller
     const int mainIconPx = tb->style()->pixelMetric(QStyle::PM_ToolBarIconSize, nullptr, tb);
-    const int subIconPx  = qMax(16, mainIconPx - 4); // subtoolbars ligeramente menores
+    const int subIconPx  = qMax(16, mainIconPx - 4); // sub‑toolbars slightly smaller
     leftPaneBar_->setIconSize(QSize(subIconPx, subIconPx));
     rightPaneBar_->setIconSize(QSize(subIconPx, subIconPx));
-    // Acciones de copiar/mover/borrar ahora residen en la sub-toolbar izquierda
+    // Copy/move/delete actions now live in the left sub‑toolbar
     actConnect_    = tb->addAction(tr("Conectar (SFTP)"), this, &MainWindow::connectSftp);
     actConnect_->setIcon(resIcon("action-connect.svg"));
     actConnect_->setToolTip(actConnect_->text());
@@ -386,37 +440,58 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     });
     actShowQueue_->setIcon(resIcon("action-open-transfer-queue.svg"));
     actShowQueue_->setToolTip(actShowQueue_->text());
-    // Separador a la derecha del botón de cola
-    tb->addSeparator();
-    // Cola siempre habilitada por defecto; sin toggle
+    // Global shortcut to open the transfer queue
+    actShowQueue_->setShortcut(QKeySequence(Qt::Key_F12));
+    actShowQueue_->setShortcutContext(Qt::ApplicationShortcut);
+    this->addAction(actShowQueue_);
 
-    // Spacer para empujar siguiente acción al extremo derecho
+    // Global fullscreen toggle (standard platform shortcut)
+    // macOS: Ctrl+Cmd+F, Linux: F11
+    {
+        QAction* actToggleFs = new QAction(tr("Pantalla completa"), this);
+        actToggleFs->setShortcut(QKeySequence::FullScreen);
+        actToggleFs->setShortcutContext(Qt::ApplicationShortcut);
+        connect(actToggleFs, &QAction::triggered, this, [this] {
+            const bool fs = (windowState() & Qt::WindowFullScreen);
+            if (fs) setWindowState(windowState() & ~Qt::WindowFullScreen);
+            else    setWindowState(windowState() |  Qt::WindowFullScreen);
+        });
+        this->addAction(actToggleFs);
+    }
+    // Separator to the right of the queue button
+    tb->addSeparator();
+    // Queue is always enabled by default; no toggle
+
+    // Spacer to push next action to the far right
     {
         QWidget* spacer = new QWidget(this);
         spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         tb->addWidget(spacer);
     }
-    // Separador visual antes del botón de ajustes (lado derecho)
+    // Visual separator before the right-side buttons
     tb->addSeparator();
-    // Botón de ajustes (extremo derecho)
+    // About button (to the left of Settings)
+    actAboutToolbar_ = tb->addAction(resIcon("action-open-about-us.svg"), tr("Acerca de OpenSCP"), this, &MainWindow::showAboutDialog);
+    if (actAboutToolbar_) actAboutToolbar_->setToolTip(actAboutToolbar_->text());
+    // Settings button (far right)
     actPrefsToolbar_ = tb->addAction(resIcon("action-open-settings.svg"), tr("Ajustes"), this, &MainWindow::showSettingsDialog);
     actPrefsToolbar_->setToolTip(actPrefsToolbar_->text());
 
-    // Atajos globales ya agregados a las acciones correspondientes
+    // Global shortcuts were already added to their respective actions
 
-    // Barra de menús (nativa en macOS)
-    // Se agregan entradas duplicando acciones existentes para quien prefiera menú clásico.
+    // Menu bar (native on macOS)
+    // Duplicate actions so users who prefer the classic menu can use it.
     appMenu_  = menuBar()->addMenu(tr("OpenSCP"));
     actAbout_ = appMenu_->addAction(tr("Acerca de OpenSCP"), this, &MainWindow::showAboutDialog);
     actAbout_->setMenuRole(QAction::AboutRole);
     actPrefs_ = appMenu_->addAction(tr("Configuración…"), this, &MainWindow::showSettingsDialog);
     actPrefs_->setMenuRole(QAction::PreferencesRole);
-    // Atajo estándar multiplataforma (Cmd+, en macOS; Ctrl+, en Linux/Windows)
+    // Standard cross‑platform shortcut (Cmd+, on macOS; Ctrl+, on Linux/Windows)
     actPrefs_->setShortcut(QKeySequence::Preferences);
     appMenu_->addSeparator();
     actQuit_  = appMenu_->addAction(tr("Salir"), qApp, &QApplication::quit);
     actQuit_->setMenuRole(QAction::QuitRole);
-    // Atajo estándar para salir (Cmd+Q / Ctrl+Q)
+    // Standard quit shortcut (Cmd+Q / Ctrl+Q)
     actQuit_->setShortcut(QKeySequence::Quit);
 
     fileMenu_ = menuBar()->addMenu(tr("Archivo"));
@@ -427,18 +502,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     fileMenu_->addAction(actDisconnect_);
     fileMenu_->addAction(actSites_);
     fileMenu_->addAction(actShowQueue_);
-    // En plataformas no-macOS, también mostrar Configuración y Salir bajo "Archivo"
-    // para una UX familiar en Linux/Windows, manteniendo a la vez el menú "OpenSCP".
+    // On non‑macOS platforms, also show Preferences and Quit under "File"
+    // to provide a familiar UX on Linux/Windows while keeping the "OpenSCP" app menu.
 #ifndef Q_OS_MAC
     fileMenu_->addSeparator();
     fileMenu_->addAction(actPrefs_);
     fileMenu_->addAction(actQuit_);
 #endif
 
-    // Ayuda (evitamos el menú de ayuda nativo para no mostrar el buscador)
+    // Help (avoid native help menu to skip the search box)
     auto* helpMenu = menuBar()->addMenu(tr("Ayuda"));
-    // En macOS, un menú titulado exactamente "Help" activa la barra de búsqueda nativa.
-    // Mantenemos la etiqueta visible "Help" pero evitamos la detección insertando un espacio de ancho cero.
+    // On macOS, a menu titled exactly "Help" triggers the native search bar.
+    // Keep visible label "Help" but avoid detection by inserting a zero‑width space.
 #ifdef Q_OS_MAC
     {
         const QString t = helpMenu->title();
@@ -448,7 +523,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     }
 #endif
     helpMenu->menuAction()->setMenuRole(QAction::NoRole);
-    // Evitar que macOS mueva acciones al menú de la app: forzar NoRole
+    // Prevent macOS from moving actions to the app menu: force NoRole
     {
         QAction* helpAboutAct = new QAction(tr("Acerca de OpenSCP"), this);
         helpAboutAct->setMenuRole(QAction::NoRole);
@@ -464,22 +539,22 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         helpMenu->addAction(reportAct);
     }
 
-    // Doble clic/Enter: navegación en ambos paneles
+    // Double click/Enter navigation on both panes
     connect(rightView_, &QTreeView::activated, this, &MainWindow::rightItemActivated);
     connect(leftView_,  &QTreeView::activated, this, &MainWindow::leftItemActivated);
 
-    // Menú contextual en panel derecho
+    // Context menu on right pane
     rightView_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(rightView_, &QWidget::customContextMenuRequested, this, &MainWindow::showRightContextMenu);
     if (rightView_->selectionModel()) {
         connect(rightView_->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this]{ updateDeleteShortcutEnables(); });
     }
 
-    // Menú contextual en panel izquierdo (local)
+    // Context menu on left pane (local)
     leftView_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(leftView_, &QWidget::customContextMenuRequested, this, &MainWindow::showLeftContextMenu);
 
-    // Habilitar atajo de borrar solo cuando hay selección en panel izquierdo
+    // Enable delete shortcut only when there is a selection on the left pane
     if (leftView_->selectionModel()) {
         connect(leftView_->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this]{ updateDeleteShortcutEnables(); });
     }
@@ -493,19 +568,19 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle(tr("OpenSCP (demo) — local/local (clic en Conectar para remoto)"));
     resize(1100, 650);
 
-    // Cola de transferencias
+    // Transfer queue
     transferMgr_ = new TransferManager(this);
 
-    // Aviso si almacenamiento inseguro está activo (solo no-Apple cuando se habilita explícitamente)
+    // Warn if insecure storage is active (non‑Apple only when explicitly enabled)
     if (SecretStore::insecureFallbackActive()) {
         statusBar()->showMessage(tr("Advertencia: almacenamiento de secretos sin cifrar activado (fallback)"), 8000);
     }
 
-    // Aplicar preferencias de usuario (ocultos, modo de clic, etc.)
+    // Apply user preferences (hidden files, click mode, etc.)
     applyPreferences();
     updateDeleteShortcutEnables();
 
-    // Mostrar Gestor de sitios al iniciar si la preferencia está activa
+    // Show Site Manager at startup if the preference is enabled
     {
         QSettings s("OpenSCP", "OpenSCP");
         const bool showConn = s.value("UI/showConnOnStart", true).toBool();
@@ -525,37 +600,44 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     }
 }
 
+// Show the application About dialog.
 void MainWindow::showAboutDialog() {
     AboutDialog dlg(this);
     dlg.exec();
 }
 
+// Open the Settings dialog and apply changes when accepted.
 void MainWindow::showSettingsDialog() {
     SettingsDialog dlg(this);
-    if (dlg.exec() == QDialog::Accepted) {
-        applyPreferences();
-    }
+    dlg.exec();
+    // Reflect any applied changes in the running UI
+    applyPreferences();
 }
 
+// Browse and set the left pane root directory.
 void MainWindow::chooseLeftDir() {
     const QString dir = QFileDialog::getExistingDirectory(this, tr("Selecciona carpeta izquierda"), leftPath_->text());
     if (!dir.isEmpty()) setLeftRoot(dir);
 }
 
+// Browse and set the right pane root directory (local mode).
 void MainWindow::chooseRightDir() {
     const QString dir = QFileDialog::getExistingDirectory(this, tr("Selecciona carpeta derecha"), rightPath_->text());
     if (!dir.isEmpty()) setRightRoot(dir);
 }
 
+// Navigate left pane to the path typed by the user.
 void MainWindow::leftPathEntered() {
     setLeftRoot(leftPath_->text());
 }
 
+// Navigate right pane (local or remote) to the path typed by the user.
 void MainWindow::rightPathEntered() {
     if (rightIsRemote_) setRightRemoteRoot(rightPath_->text());
     else setRightRoot(rightPath_->text());
 }
 
+// Set the left pane root, validating the path and updating view/status.
 void MainWindow::setLeftRoot(const QString& path) {
     if (QDir(path).exists()) {
         leftPath_->setText(path);
@@ -567,10 +649,11 @@ void MainWindow::setLeftRoot(const QString& path) {
     }
 }
 
+// Set the right (local) pane root and update view/status.
 void MainWindow::setRightRoot(const QString& path) {
     if (QDir(path).exists()) {
         rightPath_->setText(path);
-        rightView_->setRootIndex(rightLocalModel_->index(path)); // <-- aquí
+        rightView_->setRootIndex(rightLocalModel_->index(path)); // <-- here
         statusBar()->showMessage(tr("Derecha: ") + path, 3000);
         updateDeleteShortcutEnables();
     } else {
@@ -583,6 +666,7 @@ static QString joinRemotePath(const QString& base, const QString& name) {
     return base.endsWith('/') ? base + name : base + "/" + name;
 }
 
+// Center the window on first show for better UX.
 void MainWindow::showEvent(QShowEvent* e) {
     QMainWindow::showEvent(e);
     if (firstShow_) {
@@ -601,13 +685,13 @@ void MainWindow::showEvent(QShowEvent* e) {
 
 void MainWindow::copyLeftToRight() {
     if (rightIsRemote_) {
-        // ---- Rama REMOTA: subir archivos (PUT) al directorio remoto actual ----
+        // ---- REMOTE branch: upload files (PUT) to the current remote directory ----
         if (!sftp_ || !rightRemoteModel_) {
             QMessageBox::warning(this, tr("SFTP"), tr("No hay sesión SFTP activa."));
             return;
         }
 
-        // Selección en panel izquierdo (origen local)
+        // Selection on the left panel (local source)
         auto sel = leftView_->selectionModel();
         if (!sel) {
             QMessageBox::warning(this, tr("Copiar"), tr("No hay selección disponible."));
@@ -619,7 +703,7 @@ void MainWindow::copyLeftToRight() {
             return;
         }
 
-        // Encolar siempre subidas
+        // Always enqueue uploads
         const QString remoteBase = rightRemoteModel_->rootPath();
         int enq = 0;
         for (const QModelIndex& idx : rows) {
@@ -650,7 +734,7 @@ void MainWindow::copyLeftToRight() {
         return;
     }
 
-    // ---- Rama LOCAL→LOCAL: tu lógica existente tal cual ----
+    // ---- LOCAL→LOCAL branch: existing logic as-is ----
     const QString dstDirPath = rightPath_->text();
     QDir dstDir(dstDirPath);
     if (!dstDir.exists()) {
@@ -842,7 +926,7 @@ void MainWindow::moveLeftToRight() {
         return;
     }
 
-    // ---- Rama LOCAL→LOCAL existente ----
+    // ---- Existing LOCAL→LOCAL branch ----
     const QString dstDirPath = rightPath_->text();
     QDir dstDir(dstDirPath);
     if (!dstDir.exists()) { QMessageBox::warning(this, tr("Destino inválido"), tr("La carpeta de destino no existe.")); return; }
@@ -911,6 +995,7 @@ void MainWindow::goUpRight() {
     }
 }
 
+// Open the connection dialog and establish an SFTP session.
 void MainWindow::connectSftp() {
     ConnectionDialog dlg(this);
     if (dlg.exec() != QDialog::Accepted) return;
@@ -923,8 +1008,9 @@ void MainWindow::connectSftp() {
     applyRemoteConnectedUI(opt);
 }
 
+// Tear down the current SFTP session and restore local mode.
 void MainWindow::disconnectSftp() {
-    // Desacoplar cliente de la cola para evitar puntero colgante
+    // Detach client from the queue to avoid dangling pointers
     if (transferMgr_) transferMgr_->clearClient();
     if (sftp_) sftp_->disconnect();
     sftp_.reset();
@@ -942,7 +1028,7 @@ void MainWindow::disconnectSftp() {
     if (actDisconnect_) actDisconnect_->setEnabled(false);
     if (actDownloadF7_) actDownloadF7_->setEnabled(false);
     if (actUploadRight_) actUploadRight_->setEnabled(false);
-    // Local: habilitar de nuevo acciones locales del panel derecho
+    // Local mode: re-enable local actions on the right panel
     if (actNewDirRight_)   actNewDirRight_->setEnabled(true);
     if (actNewFileRight_)  actNewFileRight_->setEnabled(true);
     if (actRenameRight_)   actRenameRight_->setEnabled(true);
@@ -955,7 +1041,7 @@ void MainWindow::disconnectSftp() {
     setWindowTitle(tr("OpenSCP (demo) — local/local"));
     updateDeleteShortcutEnables();
 
-    // Mostrar Gestor de sitios al desconectar si la preferencia está activa
+    // Show Site Manager on disconnect if the preference is enabled
     {
         QSettings s("OpenSCP", "OpenSCP");
         const bool showConn = s.value("UI/showConnOnStart", true).toBool();
@@ -973,6 +1059,7 @@ void MainWindow::disconnectSftp() {
     }
 }
 
+// Navigate remote pane to a new remote directory.
 void MainWindow::setRightRemoteRoot(const QString& path) {
     if (!rightIsRemote_ || !rightRemoteModel_) return;
     QString e;
@@ -985,8 +1072,9 @@ void MainWindow::setRightRemoteRoot(const QString& path) {
     updateDeleteShortcutEnables();
 }
 
+// Handle activation (double-click/Enter) on the right pane.
 void MainWindow::rightItemActivated(const QModelIndex& idx) {
-    // Modo local (panel derecho local): navegar entrando en carpetas
+    // Local mode (right panel is local): navigate into directories
     if (!rightIsRemote_) {
         if (!rightLocalModel_) return;
         const QFileInfo fi = rightLocalModel_->fileInfo(idx);
@@ -995,7 +1083,7 @@ void MainWindow::rightItemActivated(const QModelIndex& idx) {
         }
         return;
     }
-    // Modo remoto: navegar o descargar/abrir archivo
+    // Remote mode: navigate or download/open file
     if (!rightRemoteModel_) return;
     if (rightRemoteModel_->isDir(idx)) {
         const QString name = rightRemoteModel_->nameAt(idx);
@@ -1010,7 +1098,7 @@ void MainWindow::rightItemActivated(const QModelIndex& idx) {
     if (!remotePath.endsWith('/')) remotePath += '/';
     remotePath += name;
     const QString localPath = tempDownloadPathFor(name);
-    // Evitar duplicados: si ya hay una descarga activa con mismo src/dst, no volver a encolar
+    // Avoid duplicates: if there is already an active download with same src/dst, do not enqueue again
     bool alreadyActive = false;
     {
         const auto& tasks = transferMgr_->tasks();
@@ -1023,18 +1111,18 @@ void MainWindow::rightItemActivated(const QModelIndex& idx) {
         }
     }
     if (!alreadyActive) {
-        // Encolar descarga para que aparezca en la cola (en vez de descarga directa)
+        // Enqueue download so it appears in the queue (instead of direct download)
         transferMgr_->enqueueDownload(remotePath, localPath);
         statusBar()->showMessage(QString(tr("Encolados: %1 descargas")).arg(1), 3000);
         if (!transferDlg_) transferDlg_ = new TransferQueueDialog(transferMgr_, this);
         transferDlg_->show(); transferDlg_->raise(); transferDlg_->activateWindow();
     } else {
-        // Ya había una tarea igual en cola; opcionalmente, mostrar la cola
+        // There was already an identical task in the queue; optionally show it
         if (!transferDlg_) transferDlg_ = new TransferQueueDialog(transferMgr_, this);
         transferDlg_->show(); transferDlg_->raise(); transferDlg_->activateWindow();
         statusBar()->showMessage(tr("Descarga ya encolada"), 2000);
     }
-    // Abrir archivo cuando termine la tarea correspondiente (evitar listeners duplicados)
+    // Open the file when the corresponding task finishes (avoid duplicate listeners)
     static QSet<QString> sOpenListeners;
     const QString key = remotePath + "->" + localPath;
     if (!sOpenListeners.contains(key)) {
@@ -1060,7 +1148,7 @@ void MainWindow::rightItemActivated(const QModelIndex& idx) {
     }
     }
 
-// Doble clic en panel izquierdo: si es carpeta, entrar y reemplazar raíz
+// Double click on the left panel: if it's a folder, enter it and replace root
 void MainWindow::leftItemActivated(const QModelIndex& idx) {
     if (!leftModel_) return;
     const QFileInfo fi = leftModel_->fileInfo(idx);
@@ -1069,6 +1157,7 @@ void MainWindow::leftItemActivated(const QModelIndex& idx) {
     }
 }
 
+// Enqueue downloads from the right (remote) pane to a chosen local folder.
 void MainWindow::downloadRightToLeft() {
     if (!rightIsRemote_) { QMessageBox::information(this, tr("Descargar"), tr("El panel derecho no es remoto.")); return; }
     if (!sftp_ || !rightRemoteModel_) { QMessageBox::warning(this, tr("SFTP"), tr("No hay sesión SFTP activa.")); return; }
@@ -1081,7 +1170,7 @@ void MainWindow::downloadRightToLeft() {
     QModelIndexList rows;
     if (sel) rows = sel->selectedRows(NAME_COL);
     if (rows.isEmpty()) {
-        // Descargar todo lo visible (primer nivel) si no hay selección
+        // Download everything visible (first level) if there is no selection
         int rc = rightRemoteModel_ ? rightRemoteModel_->rowCount() : 0;
         for (int r = 0; r < rc; ++r) rows << rightRemoteModel_->index(r, NAME_COL);
         if (rows.isEmpty()) { QMessageBox::information(this, tr("Descargar"), tr("Nada para descargar.")); return; }
@@ -1125,9 +1214,9 @@ void MainWindow::downloadRightToLeft() {
     }
 }
 
-// Copia selección del panel derecho al izquierdo.
-// - Remoto -> encola descargas (no bloquea).
-// - Local  -> copia local a local (con política de sobrescritura).
+// Copy the selection from the right panel to the left.
+// - Remote -> enqueue downloads (non-blocking).
+// - Local  -> local-to-local copy (with overwrite policy).
 void MainWindow::copyRightToLeft() {
     QDir dst(leftPath_->text());
     if (!dst.exists()) { QMessageBox::warning(this, tr("Destino inválido"), tr("La carpeta de destino (panel izquierdo) no existe.")); return; }
@@ -1137,7 +1226,7 @@ void MainWindow::copyRightToLeft() {
     if (rows.isEmpty()) { QMessageBox::information(this, tr("Copiar"), tr("Nada seleccionado.")); return; }
 
     if (!rightIsRemote_) {
-        // Copia local -> local (derecha a izquierda)
+        // Local -> Local copy (right to left)
         enum class OverwritePolicy { Ask, OverwriteAll, SkipAll };
         OverwritePolicy policy = OverwritePolicy::Ask;
         int ok = 0, fail = 0, skipped = 0;
@@ -1170,7 +1259,7 @@ void MainWindow::copyRightToLeft() {
         return;
     }
 
-    // Remoto -> local: encolar descargas
+    // Remote -> Local: enqueue downloads
     if (!sftp_ || !rightRemoteModel_) { QMessageBox::warning(this, tr("SFTP"), tr("No hay sesión SFTP activa.")); return; }
     int enq = 0;
     const QString remoteBase = rightRemoteModel_->rootPath();
@@ -1211,9 +1300,9 @@ void MainWindow::copyRightToLeft() {
     }
 }
 
-// Mueve selección del panel derecho al izquierdo.
-// - Remoto -> descarga con progreso y borra en remoto si tuvo éxito.
-// - Local  -> copia local y borra el origen.
+// Move the selection from the right panel to the left.
+// - Remote -> download with progress and delete remotely on success.
+// - Local  -> local copy and delete the source.
 void MainWindow::moveRightToLeft() {
     auto sel = rightView_->selectionModel();
     if (!sel || sel->selectedRows(NAME_COL).isEmpty()) { QMessageBox::information(this, tr("Mover"), tr("Nada seleccionado.")); return; }
@@ -1221,7 +1310,7 @@ void MainWindow::moveRightToLeft() {
     if (!dst.exists()) { QMessageBox::warning(this, tr("Destino inválido"), tr("La carpeta de destino (panel izquierdo) no existe.")); return; }
 
     if (!rightIsRemote_) {
-        // Local -> Local: mover (copiar y borrar)
+        // Local -> Local: move (copy then delete)
         enum class OverwritePolicy { Ask, OverwriteAll, SkipAll };
         OverwritePolicy policy = OverwritePolicy::Ask;
         int ok = 0, fail = 0, skipped = 0;
@@ -1258,7 +1347,7 @@ void MainWindow::moveRightToLeft() {
         return;
     }
 
-    // Remoto -> Local: encolar descargas y borrar remoto al completar
+    // Remote -> Local: enqueue downloads and delete remote on completion
     if (!sftp_ || !rightRemoteModel_) { QMessageBox::warning(this, tr("SFTP"), tr("No hay sesión SFTP activa.")); return; }
     const auto rows = sel->selectedRows(NAME_COL);
     const QString remoteBase = rightRemoteModel_->rootPath();
@@ -1297,23 +1386,23 @@ void MainWindow::moveRightToLeft() {
         if (!transferDlg_) transferDlg_ = new TransferQueueDialog(transferMgr_, this);
         transferDlg_->show(); transferDlg_->raise(); transferDlg_->activateWindow();
     }
-    // Borrado por elemento: a medida que cada descarga termina OK, borra ese remoto;
-    // cuando una carpeta queda sin archivos pendientes, borra la carpeta.
+    // Per-item deletion: as each download finishes OK, delete that remote file;
+    // when a folder has no pending files left, delete the folder.
     if (enq > 0) {
         struct MoveState {
-            QSet<QString> filesPending;                 // remotos por borrar (archivos)
-            QSet<QString> filesProcessed;               // remotos ya procesados (evita repetir)
-            QHash<QString, QString> fileToTopDir;       // remoto de archivo -> top dir rpath
-            QHash<QString, int> remainingInTopDir;      // top dir -> # archivos pendientes exitosos
-            QSet<QString> topDirs;                      // rpaths de top que son directorios
-            QSet<QString> deletedDirs;                  // top dirs ya eliminados
+            QSet<QString> filesPending;                 // remote files pending deletion
+            QSet<QString> filesProcessed;               // remote files already processed (avoid duplicates)
+            QHash<QString, QString> fileToTopDir;       // remote file -> top dir rpath
+            QHash<QString, int> remainingInTopDir;      // top dir -> count of pending successful files
+            QSet<QString> topDirs;                      // rpaths of top entries that are directories
+            QSet<QString> deletedDirs;                  // top dirs already deleted
         };
         auto state = std::make_shared<MoveState>();
-        // Inicializar mapeo top dir y contadores
+        // Initialize top dir mapping and counters
         for (const auto& tsel : top) if (tsel.isDir) { state->topDirs.insert(tsel.rpath); state->remainingInTopDir.insert(tsel.rpath, 0); }
         for (const auto& pr : pairs) {
             state->filesPending.insert(pr.first);
-            // localizar top dir contenedor
+            // Locate containing top directory
             QString foundTop;
             for (const auto& tsel : top) {
                 if (!tsel.isDir) continue;
@@ -1325,7 +1414,7 @@ void MainWindow::moveRightToLeft() {
                 state->remainingInTopDir[foundTop] = state->remainingInTopDir.value(foundTop) + 1;
             }
         }
-        // Si hay carpetas con 0 archivos, intentar borrarlas solo si están vacías
+        // If there are directories with 0 files, try to delete them only if empty
         for (auto it = state->remainingInTopDir.begin(); it != state->remainingInTopDir.end(); ++it) {
             if (it.value() == 0) {
                 std::vector<openscp::FileInfo> out; std::string lerr;
@@ -1339,14 +1428,14 @@ void MainWindow::moveRightToLeft() {
         auto connPtr = std::make_shared<QMetaObject::Connection>();
         *connPtr = connect(transferMgr_, &TransferManager::tasksChanged, this, [this, state, remoteBase, connPtr, pairs]() {
             const auto& tasks = transferMgr_->tasks();
-            // 1) Por cada tarea terminada OK, borrar el archivo remoto correspondiente (una vez)
+            // 1) For each successfully completed task, delete the corresponding remote file (once)
             for (const auto& t : tasks) {
                 if (t.type != TransferTask::Type::Download) continue;
                 if (t.status != TransferTask::Status::Done) continue;
                 const QString r = t.src;
                 if (!state->filesPending.contains(r)) continue; // no pertenece a este movimiento o ya borrado
                 if (state->filesProcessed.contains(r)) continue;
-                // Intentar borrar remoto del archivo
+                // Try to delete the remote file
                 std::string ferr; bool okDel = sftp_ && sftp_->removeFile(r.toStdString(), ferr);
                 state->filesProcessed.insert(r);
                 if (okDel) {
@@ -1357,7 +1446,7 @@ void MainWindow::moveRightToLeft() {
                         int rem = state->remainingInTopDir.value(topDir) - 1;
                         state->remainingInTopDir[topDir] = rem;
                         if (rem == 0 && !state->deletedDirs.contains(topDir)) {
-                            // Todos los archivos de este top dir fueron movidos: borrar carpeta solo si está vacía
+                            // All files under this top dir were moved: delete folder only if empty
                             std::vector<openscp::FileInfo> out; std::string lerr;
                             if (sftp_ && sftp_->list(topDir.toStdString(), out, lerr) && out.empty()) {
                                 std::string derr; if (sftp_->removeDir(topDir.toStdString(), derr)) {
@@ -1367,12 +1456,12 @@ void MainWindow::moveRightToLeft() {
                         }
                     }
                 } else {
-                    // No borrado: mantenerlo fuera para no reintentar sin fin; podría reintentar si se desea
+                    // Not deleted: keep it out to avoid endless retries; could retry if desired
                     state->filesPending.remove(r);
                 }
             }
 
-            // 2) Desconectar cuando todas las tareas relacionadas hayan pasado a estado final
+            // 2) Disconnect when all related tasks have reached a final state
             bool allFinal = true;
             for (const auto& pr : pairs) {
                 bool found = false, final = false;
@@ -1448,6 +1537,7 @@ void MainWindow::uploadViaDialog() {
 
 
 
+// Create a new directory in the right pane (local or remote).
 void MainWindow::newDirRight() {
     bool ok = false;
     const QString name = QInputDialog::getText(this, tr("Nueva carpeta"), tr("Nombre:"), QLineEdit::Normal, {}, &ok);
@@ -1468,6 +1558,7 @@ void MainWindow::newDirRight() {
     }
 }
 
+// Create a new empty file in the right pane (local only).
 void MainWindow::newFileRight() {
     bool ok = false;
     const QString name = QInputDialog::getText(this, tr("Nuevo archivo"), tr("Nombre:"), QLineEdit::Normal, {}, &ok);
@@ -1512,6 +1603,7 @@ void MainWindow::newFileRight() {
     }
 }
 
+// Rename the selected entry on the right pane (local or remote).
 void MainWindow::renameRightSelected() {
     auto sel = rightView_->selectionModel();
     if (!sel) return;
@@ -1546,6 +1638,7 @@ void MainWindow::renameRightSelected() {
     }
 }
 
+// Rename the selected entry on the left (local) pane.
 void MainWindow::renameLeftSelected() {
     auto sel = leftView_->selectionModel();
     if (!sel) return;
@@ -1563,6 +1656,7 @@ void MainWindow::renameLeftSelected() {
     setLeftRoot(leftPath_->text());
 }
 
+// Create a new directory in the left (local) pane.
 void MainWindow::newDirLeft() {
     bool ok = false;
     const QString name = QInputDialog::getText(this, tr("Nueva carpeta"), tr("Nombre:"), QLineEdit::Normal, {}, &ok);
@@ -1573,6 +1667,7 @@ void MainWindow::newDirLeft() {
     setLeftRoot(base.absolutePath());
 }
 
+// Create a new empty file in the left (local) pane.
 void MainWindow::newFileLeft() {
     bool ok = false;
     const QString name = QInputDialog::getText(this, tr("Nuevo archivo"), tr("Nombre:"), QLineEdit::Normal, {}, &ok);
@@ -1592,6 +1687,7 @@ void MainWindow::newFileLeft() {
     statusBar()->showMessage(tr("Archivo creado: ") + path, 4000);
 }
 
+// Delete the selected entries from the right pane (local or remote).
 void MainWindow::deleteRightSelected() {
     auto sel = rightView_->selectionModel();
     if (!sel) return;
@@ -1648,16 +1744,17 @@ void MainWindow::deleteRightSelected() {
     }
 }
 
+// Show context menu for the right pane based on current state.
 void MainWindow::showRightContextMenu(const QPoint& pos) {
     if (!rightContextMenu_) rightContextMenu_ = new QMenu(this);
     rightContextMenu_->clear();
 
-    // Estado de selección y posibilidad de subir nivel
+    // Selection state and ability to go up
     bool hasSel = false;
     if (auto sel = rightView_->selectionModel()) {
         hasSel = !sel->selectedRows(NAME_COL).isEmpty();
     }
-    // ¿Hay directorio padre?
+    // Is there a parent directory?
     bool canGoUp = false;
     if (rightIsRemote_) {
         QString cur = rightRemoteModel_ ? rightRemoteModel_->rootPath() : QString();
@@ -1669,20 +1766,20 @@ void MainWindow::showRightContextMenu(const QPoint& pos) {
     }
 
     if (rightIsRemote_) {
-        // Opción Arriba (si aplica)
+        // Up option (if applicable)
         if (canGoUp && actUpRight_) rightContextMenu_->addAction(actUpRight_);
 
-        // Mostrar siempre "Descargar" en remoto, haya o no selección
+        // Always show "Download" on remote, regardless of selection
         if (actDownloadF7_) rightContextMenu_->addAction(actDownloadF7_);
 
         if (!hasSel) {
-            // Sin selección: creación y navegación
+            // No selection: creation and navigation
             if (rightRemoteWritable_) {
                 if (actNewFileRight_) rightContextMenu_->addAction(actNewFileRight_);
                 if (actNewDirRight_)  rightContextMenu_->addAction(actNewDirRight_);
             }
         } else {
-            // Con selección en remoto
+            // With selection on remote
             if (actCopyRight_)   rightContextMenu_->addAction(actCopyRight_);
             if (rightRemoteWritable_) {
                 rightContextMenu_->addSeparator();
@@ -1697,20 +1794,20 @@ void MainWindow::showRightContextMenu(const QPoint& pos) {
             }
         }
     } else {
-        // Local: Opción Arriba si aplica
+        // Local: Up option if applicable
         if (canGoUp && actUpRight_) rightContextMenu_->addAction(actUpRight_);
         if (!hasSel) {
-            // Sin selección: creación
+            // No selection: creation
             if (actNewFileRight_) rightContextMenu_->addAction(actNewFileRight_);
             if (actNewDirRight_)  rightContextMenu_->addAction(actNewDirRight_);
         } else {
-            // Con selección: operaciones locales + copiar/mover desde izquierda
+            // With selection: local operations + copy/move from left
             if (actNewFileRight_) rightContextMenu_->addAction(actNewFileRight_);
             if (actNewDirRight_)  rightContextMenu_->addAction(actNewDirRight_);
             if (actRenameRight_)   rightContextMenu_->addAction(actRenameRight_);
             if (actDeleteRight_)   rightContextMenu_->addAction(actDeleteRight_);
             rightContextMenu_->addSeparator();
-            // Copiar/mover la selección del panel derecho hacia el izquierdo
+            // Copy/move the selection from the right panel to the left
             if (actCopyRight_)     rightContextMenu_->addAction(actCopyRight_);
             if (actMoveRight_)     rightContextMenu_->addAction(actMoveRight_);
         }
@@ -1718,10 +1815,11 @@ void MainWindow::showRightContextMenu(const QPoint& pos) {
     rightContextMenu_->popup(rightView_->viewport()->mapToGlobal(pos));
 }
 
+// Show context menu for the left (local) pane.
 void MainWindow::showLeftContextMenu(const QPoint& pos) {
     if (!leftContextMenu_) leftContextMenu_ = new QMenu(this);
     leftContextMenu_->clear();
-    // Selección y posibilidad de subir nivel
+    // Selection and ability to go up
     bool hasSel = false;
     if (auto sel = leftView_->selectionModel()) {
         hasSel = !sel->selectedRows(NAME_COL).isEmpty();
@@ -1729,7 +1827,7 @@ void MainWindow::showLeftContextMenu(const QPoint& pos) {
     QDir d(leftPath_ ? leftPath_->text() : QString());
     bool canGoUp = d.cdUp();
 
-    // Acciones locales del panel izquierdo
+    // Local actions on the left panel
     if (canGoUp && actUpLeft_)   leftContextMenu_->addAction(actUpLeft_);
     if (!hasSel) {
         if (actNewFileLeft_) leftContextMenu_->addAction(actNewFileLeft_);
@@ -1739,7 +1837,7 @@ void MainWindow::showLeftContextMenu(const QPoint& pos) {
         if (actNewDirLeft_)  leftContextMenu_->addAction(actNewDirLeft_);
         if (actRenameLeft_) leftContextMenu_->addAction(actRenameLeft_);
         leftContextMenu_->addSeparator();
-        // Etiquetas direccionales en el menú, conectadas a las acciones existentes
+        // Directional labels in the menu, wired to existing actions
         leftContextMenu_->addAction(tr("Copiar al panel derecho"), this, &MainWindow::copyLeftToRight);
         leftContextMenu_->addAction(tr("Mover al panel derecho"), this, &MainWindow::moveLeftToRight);
         if (actDelete_)   leftContextMenu_->addAction(actDelete_);
@@ -1747,6 +1845,7 @@ void MainWindow::showLeftContextMenu(const QPoint& pos) {
     leftContextMenu_->popup(leftView_->viewport()->mapToGlobal(pos));
 }
 
+// Change permissions of the selected remote entry.
 void MainWindow::changeRemotePermissions() {
     if (!rightIsRemote_ || !sftp_ || !rightRemoteModel_) return;
     auto sel = rightView_->selectionModel();
@@ -1798,6 +1897,7 @@ void MainWindow::changeRemotePermissions() {
     statusBar()->showMessage(tr("Permisos actualizados"), 3000);
 }
 
+// Ask the user to confirm an unknown host key (TOFU).
 bool MainWindow::confirmHostKeyUI(const QString& host, quint16 port, const QString& algorithm, const QString& fingerprint) {
     QMessageBox box(this);
     box.setIcon(QMessageBox::Question);
@@ -1812,11 +1912,12 @@ bool MainWindow::confirmHostKeyUI(const QString& host, quint16 port, const QStri
     return box.clickedButton() == btYes;
 }
 
+// Intercept drag-and-drop and global events for panes and dialogs.
 bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
     // Centrar QDialog/QMessageBox al mostrarse respecto a la ventana principal
     if (ev->type() == QEvent::Show) {
         if (auto* dlg = qobject_cast<QDialog*>(obj)) {
-            // Solo centrar diálogos que pertenecen (directa o indirectamente) a esta ventana
+    // Only center dialogs that belong (directly or indirectly) to this window
             QWidget* p = dlg->parentWidget();
             bool belongsToThis = false;
             while (p) {
@@ -1838,7 +1939,7 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
         }
     }
 
-    // DnD sobre el panel derecho (local o remoto)
+    // Drag-and-drop over the right panel (local or remote)
     if (rightView_ && obj == rightView_->viewport()) {
         if (ev->type() == QEvent::DragEnter) {
             auto* de = static_cast<QDragEnterEvent*>(ev);
@@ -1855,13 +1956,13 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
             const auto urls = dd->mimeData() ? dd->mimeData()->urls() : QList<QUrl>{};
             if (urls.isEmpty()) { dd->acceptProposedAction(); return true; }
             if (rightIsRemote_) {
-                // Bloquear subida si el remoto es solo lectura
+                // Block upload if remote is read-only
                 if (!rightRemoteWritable_) {
                     statusBar()->showMessage(tr("Directorio remoto en solo lectura; no se puede subir aquí"), 5000);
                     dd->ignore();
                     return true;
                 }
-                // Subida a remoto
+                // Upload to remote
                 if (!sftp_ || !rightRemoteModel_) { dd->acceptProposedAction(); return true; }
                 const QString remoteBase = rightRemoteModel_->rootPath();
                 int enq = 0;
@@ -1893,7 +1994,7 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
                 dd->acceptProposedAction();
                 return true;
             } else {
-                // Copia local al directorio del panel derecho
+                // Local copy to the right panel directory
                 QDir dst(rightPath_->text());
                 if (!dst.exists()) { dd->acceptProposedAction(); return true; }
                 int ok = 0, fail = 0;
@@ -1903,7 +2004,7 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
                     if (p.isEmpty()) continue;
                     QFileInfo fi(p);
                     const QString target = dst.filePath(fi.fileName());
-                    // Evitar copiar sobre sí mismo si es el mismo directorio/archivo
+                    // Avoid copying onto itself if same directory/file
                     if (fi.absoluteFilePath() == target) {
                         continue;
                     }
@@ -1919,8 +2020,8 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
             }
         }
     }
-    // DnD sobre el panel izquierdo (local): copiar/descargar
-    // Actualiza estado del atajo de borrar si la selección cambia por DnD o click
+    // Drag-and-drop over the left panel (local): copy/download
+    // Update delete shortcut enablement if selection changes due to DnD or click
     if (leftView_ && obj == leftView_->viewport()) {
         if (ev->type() == QEvent::DragEnter) {
             auto* de = static_cast<QDragEnterEvent*>(ev);
@@ -1934,7 +2035,7 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
             auto* dd = static_cast<QDropEvent*>(ev);
             const auto urls = dd->mimeData() ? dd->mimeData()->urls() : QList<QUrl>{};
             if (!urls.isEmpty()) {
-                // Copia local hacia panel izquierdo
+                // Local copy towards the left panel
                 QDir dst(leftPath_->text());
                 if (!dst.exists()) { dd->acceptProposedAction(); return true; }
                 int ok = 0, fail = 0;
@@ -1944,7 +2045,7 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
                     if (p.isEmpty()) continue;
                     QFileInfo fi(p);
                     const QString target = dst.filePath(fi.fileName());
-                    // Evitar self-drop: mismo archivo/carpeta y mismo destino
+                    // Avoid self-drop: same file/folder and same destination
                     if (fi.absoluteFilePath() == target) {
                         continue;
                     }
@@ -1959,7 +2060,7 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
                 updateDeleteShortcutEnables();
                 return true;
             }
-            // Descargar desde remoto (según selección del panel derecho)
+            // Download from remote (based on right panel selection)
             if (rightIsRemote_ == true && rightView_ && rightRemoteModel_) {
                 auto sel = rightView_->selectionModel();
                 if (!sel || sel->selectedRows(NAME_COL).isEmpty()) { dd->acceptProposedAction(); return true; }
@@ -2011,8 +2112,9 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
     return QMainWindow::eventFilter(obj, ev);
 }
 
+// Establish an SFTP connection asynchronously and wire UI callbacks.
 bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& err) {
-    // Inyectar confirmación de huella (TOFU) desde UI
+    // Inject host key confirmation (TOFU) via UI
     opt.hostkey_confirm_cb = [this](const std::string& h, std::uint16_t p, const std::string& alg, const std::string& fp) {
         bool accepted = false;
         QMetaObject::invokeMethod(this, [&, h, p, alg, fp] {
@@ -2021,7 +2123,7 @@ bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& er
         return accepted;
     };
 
-    // Callback de keyboard-interactive (OTP/2FA). Prefiere autocompletar password/usuario; pide OTP si hace falta.
+    // Keyboard-interactive callback (OTP/2FA). Prefer auto-filling password/username; request OTP if needed.
     const std::string savedUser = opt.username;
     const std::string savedPass = opt.password ? *opt.password : std::string();
     opt.keyboard_interactive_cb = [this, savedUser, savedPass](const std::string& name,
@@ -2031,19 +2133,19 @@ bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& er
         (void)name;
         responses.clear();
         responses.reserve(prompts.size());
-        // Resolver cada prompt: autollenar user/pass y pedir OTP/códigos si aparecen
+        // Resolve each prompt: auto-fill user/pass and ask for OTP/codes if present
         for (const std::string& p : prompts) {
             QString qprompt = QString::fromStdString(p);
             QString lower = qprompt.toLower();
-            // Usuario
+            // Username
             if (lower.contains("user") || lower.contains("name:")) {
                 responses.emplace_back(savedUser);
                 continue;
             }
-            // Contraseña
+            // Password
             if (lower.contains("password") || lower.contains("passphrase") || lower.contains("passcode")) {
                 if (!savedPass.empty()) { responses.emplace_back(savedPass); continue; }
-                // Pedir contraseña si no la teníamos
+                // Ask for password if we did not have it
                 QString ans;
                 bool ok = false;
                 QMetaObject::invokeMethod(this, [&] {
@@ -2054,7 +2156,7 @@ bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& er
                 responses.emplace_back(ans.toUtf8().toStdString());
                 continue;
             }
-            // OTP / Código de verificación / Token
+            // OTP / Verification code / Token
             if (lower.contains("verification") || lower.contains("verify") || lower.contains("otp") || lower.contains("code") || lower.contains("token")) {
                 QString title = tr("Código de verificación requerido");
                 if (!instruction.empty()) title += " — " + QString::fromStdString(instruction);
@@ -2067,7 +2169,7 @@ bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& er
                 responses.emplace_back(ans.toUtf8().toStdString());
                 continue;
             }
-            // Caso genérico: pedir texto (sin ocultar)
+            // Generic case: ask for text (not hidden)
             QString title = tr("Información requerida");
             if (!instruction.empty()) title += " — " + QString::fromStdString(instruction);
             QString ans;
@@ -2102,6 +2204,7 @@ bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& er
     return okConn;
 }
 
+// Switch UI into remote mode and wire models/actions for the right pane.
 void MainWindow::applyRemoteConnectedUI(const openscp::SessionOptions& opt) {
     delete rightRemoteModel_;
     rightRemoteModel_ = new RemoteModel(sftp_.get(), this);
@@ -2143,12 +2246,13 @@ void MainWindow::applyRemoteConnectedUI(const openscp::SessionOptions& opt) {
     updateDeleteShortcutEnables();
 }
 
+// Apply persisted user preferences to the UI.
 void MainWindow::applyPreferences() {
     QSettings s("OpenSCP", "OpenSCP");
     const bool showHidden = s.value("UI/showHidden", false).toBool();
     const bool singleClick = s.value("UI/singleClick", false).toBool();
 
-    // Local: filtros de modelo (ocultos on/off)
+    // Local: model filters (hidden on/off)
     auto applyLocalFilters = [&](QFileSystemModel* m) {
         if (!m) return;
         QDir::Filters f = QDir::AllEntries | QDir::NoDotAndDotDot | QDir::AllDirs;
@@ -2158,7 +2262,7 @@ void MainWindow::applyPreferences() {
     applyLocalFilters(leftModel_);
     applyLocalFilters(rightLocalModel_);
 
-    // Remoto: re-listar con filtro de ocultos
+    // Remote: re-list with hidden filter
     prefShowHidden_ = showHidden;
     if (rightRemoteModel_) {
         rightRemoteModel_->setShowHidden(showHidden);
@@ -2166,9 +2270,9 @@ void MainWindow::applyPreferences() {
         rightRemoteModel_->setRootPath(rightRemoteModel_->rootPath(), &dummy);
     }
 
-    // Activación por un clic (añadir/quitar conexión a clicked())
+    // Single-click activation (connect/disconnect to clicked())
     if (prefSingleClick_ != singleClick) {
-        // Desconectar conexiones previas si existían
+        // Disconnect previous connections if they existed
         if (leftClickConn_)  { QObject::disconnect(leftClickConn_);  leftClickConn_  = QMetaObject::Connection(); }
         if (rightClickConn_) { QObject::disconnect(rightClickConn_); rightClickConn_ = QMetaObject::Connection(); }
         if (singleClick) {
@@ -2179,9 +2283,10 @@ void MainWindow::applyPreferences() {
     }
 }
 
+// Check if the current remote directory is writable and update enables.
 void MainWindow::updateRemoteWriteability() {
-    // Determina si el directorio remoto actual es escribible intentando crear y borrar
-    // una carpeta temporal. Conservador: si falla, consideramos solo lectura.
+    // Determine if the current remote directory is writable by attempting to create and delete
+    // a temporary folder. Conservative: if it fails, consider read-only.
     if (!rightIsRemote_ || !sftp_ || !rightRemoteModel_) {
         rightRemoteWritable_ = false;
         return;
@@ -2198,7 +2303,7 @@ void MainWindow::updateRemoteWriteability() {
     } else {
         rightRemoteWritable_ = false;
     }
-    // Reflejar en acciones que requieren escritura
+    // Reflect in actions that require write access
     if (actUploadRight_) actUploadRight_->setEnabled(rightRemoteWritable_);
     if (actNewDirRight_)  actNewDirRight_->setEnabled(rightRemoteWritable_);
     if (actNewFileRight_) actNewFileRight_->setEnabled(rightRemoteWritable_);
@@ -2208,9 +2313,10 @@ void MainWindow::updateRemoteWriteability() {
     if (actMoveRightTb_)  actMoveRightTb_->setEnabled(rightRemoteWritable_);
     updateDeleteShortcutEnables();
 }
-// Reglas de habilitación de botones/atajos en ambas sub‑toolbars.
-// - General: requieren selección.
-// - Excepciones: Arriba (si hay padre), Subir… (remoto RW), Descargar (remoto).
+    // Enablement rules for buttons/shortcuts on both sub‑toolbars.
+// - General: require a selection.
+// - Exceptions: Up (if parent exists), Upload… (remote RW), Download (remote).
+// Enable Delete shortcuts only when a selection is present in the corresponding pane.
 void MainWindow::updateDeleteShortcutEnables() {
     auto hasColSel = [&](QTreeView* v) -> bool {
         if (!v || !v->selectionModel()) return false;
@@ -2220,28 +2326,28 @@ void MainWindow::updateDeleteShortcutEnables() {
     const bool rightHasSel = hasColSel(rightView_);
     const bool rightWrite = (!rightIsRemote_) || (rightIsRemote_ && rightRemoteWritable_);
 
-    // Izquierda: habilitar según selección (excepción: Arriba)
+    // Left: enable according to selection (exception: Up)
     if (actCopyF5_)    actCopyF5_->setEnabled(leftHasSel);
     if (actMoveF6_)    actMoveF6_->setEnabled(leftHasSel);
     if (actDelete_)    actDelete_->setEnabled(leftHasSel);
     if (actRenameLeft_)  actRenameLeft_->setEnabled(leftHasSel);
-    if (actNewDirLeft_)  actNewDirLeft_->setEnabled(true); // siempre habilitado en local
-    if (actNewFileLeft_) actNewFileLeft_->setEnabled(true); // siempre habilitado en local
+    if (actNewDirLeft_)  actNewDirLeft_->setEnabled(true); // always enabled on local
+    if (actNewFileLeft_) actNewFileLeft_->setEnabled(true); // always enabled on local
     if (actUpLeft_) {
         QDir d(leftPath_ ? leftPath_->text() : QString());
         bool canUp = d.cdUp();
         actUpLeft_->setEnabled(canUp);
     }
 
-    // Derecha: habilitar según selección + permisos (excepciones: Arriba, Subir, Descargar)
+    // Right: enable according to selection + permissions (exceptions: Up, Upload, Download)
     if (actCopyRightTb_) actCopyRightTb_->setEnabled(rightHasSel);
     if (actMoveRightTb_) actMoveRightTb_->setEnabled(rightHasSel && rightWrite);
     if (actDeleteRight_) actDeleteRight_->setEnabled(rightHasSel && rightWrite);
     if (actRenameRight_)  actRenameRight_->setEnabled(rightHasSel && rightWrite);
-    if (actNewDirRight_)  actNewDirRight_->setEnabled(rightWrite); // habilitado si local o remoto con escritura
+    if (actNewDirRight_)  actNewDirRight_->setEnabled(rightWrite); // enabled if local or remote is writable
     if (actNewFileRight_) actNewFileRight_->setEnabled(rightWrite);
-    if (actUploadRight_) actUploadRight_->setEnabled(rightIsRemote_ && rightRemoteWritable_); // excepción
-    if (actDownloadF7_) actDownloadF7_->setEnabled(rightIsRemote_); // excepción: habilitado sin selección
+    if (actUploadRight_) actUploadRight_->setEnabled(rightIsRemote_ && rightRemoteWritable_); // exception
+    if (actDownloadF7_) actDownloadF7_->setEnabled(rightIsRemote_); // exception: enabled without selection
     if (actUpRight_) {
         QString cur = rightRemoteModel_ ? rightRemoteModel_->rootPath() : rightPath_->text();
         if (rightIsRemote_) {

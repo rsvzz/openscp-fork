@@ -1,4 +1,4 @@
-// Punto de entrada de la aplicación: inicializa Qt y muestra MainWindow.
+// Application entry point: initialize Qt and show MainWindow.
 #include <QApplication>
 #include <QSettings>
 #include <QTranslator>
@@ -13,12 +13,12 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setApplicationName("OpenSCP");
     QCoreApplication::setOrganizationName("OpenSCP");
 
-    // Tema: usar el predeterminado del sistema (sin overrides)
+    // Theme: use system default (no overrides)
 
-    // Cargar traducción si existe (soporta recursos y disco)
+    // Load translation if available (supports resources and disk)
     QSettings s("OpenSCP", "OpenSCP");
     const QString lang = s.value("UI/language", "es").toString();
-    static QTranslator translator; // estático para que viva hasta app.exec()
+    static QTranslator translator; // static so it lives until app.exec()
     const QString base = QString("openscp_%1").arg(lang);
     const QString exeDir = QCoreApplication::applicationDirPath();
     const QString transDir1 = QDir(exeDir).filePath("translations");

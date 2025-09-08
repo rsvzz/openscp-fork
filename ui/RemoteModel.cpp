@@ -1,4 +1,4 @@
-// Implementación del modelo remoto (tabla: Nombre, Tamaño, Fecha, Permisos).
+// Remote model implementation (table: Name, Size, Date, Permissions).
 #include "RemoteModel.hpp"
 #include <QVariant>
 #include <QDateTime>
@@ -34,10 +34,10 @@ QVariant RemoteModel::data(const QModelIndex& index, int role) const {
                 else
                     return QVariant();
             case 3: {
-                // permisos estilo rwxr-xr-x
+                // Permissions in rwxr-xr-x style
                 QString s(10, '-');
                 const quint32 m = it.mode;
-                // tipo
+                // file type
                 bool isLnk = (m & 0120000u) == 0120000u;
                 s[0] = isLnk ? 'l' : (it.isDir ? 'd' : '-');
                 auto bit = [&](int pos, quint32 mask, QChar ch) { if (m & mask) s[pos] = ch; };
@@ -118,8 +118,8 @@ QVariant RemoteModel::headerData(int section, Qt::Orientation orientation, int r
 }
 
 QStringList RemoteModel::mimeTypes() const {
-    // No necesitamos URL reales; basta con tener algún tipo para que inicie el drag.
-    // Usamos el tipo de datos estándar que Qt entiende.
+    // No real URLs are needed; a standard type is enough for initiating drag.
+    // Use the standard data type understood by Qt.
     return { QStringLiteral("text/plain") };
 }
 
@@ -146,7 +146,7 @@ void RemoteModel::sort(int column, Qt::SortOrder order) {
         return asc ? (cmp < 0) : (cmp > 0);
     };
     auto less = [&](const Item& a, const Item& b) {
-        // Directorios primero, luego criterio
+        // Directories first, then criterion
         if (a.isDir != b.isDir) return a.isDir && !b.isDir;
         switch (column) {
             case 0: return lessStr(a.name, b.name);

@@ -1,5 +1,5 @@
-// Backend libssh2: gestiona socket TCP, sesión SSH y canal SFTP.
-// Incluye keepalive, validación de known_hosts y soporte de reanudación.
+// libssh2 backend: manages TCP socket, SSH session, and SFTP channel.
+// Includes keepalive, known_hosts validation, and resume support.
 #include "openscp/Libssh2SftpClient.hpp"
 #include <libssh2.h>
 #include <libssh2_sftp.h>
@@ -23,17 +23,17 @@
 
 namespace openscp {
 
-// Inicialización global de libssh2 (una vez por proceso)
+// Global libssh2 initialization (once per process)
 static bool g_libssh2_inited = false;
 
-// Contexto para kbd-interactive: podemos responder usuario y contraseña según el prompt
+// Context for keyboard-interactive: respond with username/password based on the prompt
 struct KbdIntCtx {
     const char* user;
     const char* pass;
-    const KbdIntPromptsCB* cb; // opcional: callback UI para prompts
+    const KbdIntPromptsCB* cb; // optional: UI callback for prompts
 };
 
-// Callback keyboard-interactive: responde a prompts con user/password según el texto
+// Keyboard-interactive callback: respond to prompts with username/password based on the text
 static void kbint_password_callback(const char* name, int name_len,
                                     const char* instruction, int instruction_len,
                                     int num_prompts,
@@ -47,7 +47,7 @@ static void kbint_password_callback(const char* name, int name_len,
     const size_t ulen = user ? std::strlen(user) : 0;
     const size_t plen = pass ? std::strlen(pass) : 0;
 
-    // Si hay callback UI, ofrecerle la oportunidad de responder los prompts.
+    // If a UI callback is provided, give it a chance to answer the prompts.
     if (ctx && ctx->cb && *(ctx->cb) && num_prompts > 0) {
         std::vector<std::string> ptxts;
         ptxts.reserve((size_t)num_prompts);
@@ -80,17 +80,16 @@ static void kbint_password_callback(const char* name, int name_len,
             }
             return;
         }
-        // si el callback no pudo responder, caemos al heurístico simple
+        // If the callback could not answer, fall back to the simple heuristic
     }
     for (int i = 0; i < num_prompts; ++i) {
         const char* prompt = (prompts && prompts[i].text) ? reinterpret_cast<const char*>(prompts[i].text) : "";
         bool wantUser = false;
-        // Heurística simple: si el prompt menciona "user" o "name", enviar usuario; si no, contraseña
+        // Simple heuristic: if the prompt mentions "user" or "name", send username; otherwise send password
         for (const char* p = prompt; *p; ++p) {
             char c = *p;
             if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
-            // buscar secuencias simples en minúsculas
-            // "user" o "name" en el prompt
+            // search simple lowercase sequences: "user" or "name" in the prompt
             if (c == 'u' && p[1] == 's' && p[2] == 'e' && p[3] == 'r') {
                 wantUser = true;
                 break;
@@ -152,10 +151,10 @@ bool Libssh2SftpClient::tcpConnect(const std::string& host, uint16_t port, std::
     for (auto rp = res; rp != nullptr; rp = rp->ai_next) {
         s = ::socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (s == -1) continue;
-        // Nota: evitamos fijar SO_RCVTIMEO/SO_SNDTIMEO durante autenticación porque
-        // puede interferir con userauth en algunos servidores/libc. Confiamos en
-        // libssh2_session_set_timeout (si está disponible) para gestionar timeouts.
-        // Activar keepalive de TCP
+        // Note: avoid setting SO_RCVTIMEO/SO_SNDTIMEO during authentication because
+        // it may interfere with userauth on some servers/libc. Rely on
+        // libssh2_session_set_timeout (when available) to manage timeouts.
+        // Enable TCP keepalive
         int opt = 1;
         ::setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, &opt, sizeof(opt));
 #ifdef __APPLE__
@@ -168,7 +167,7 @@ bool Libssh2SftpClient::tcpConnect(const std::string& host, uint16_t port, std::
         ::setsockopt(s, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt));
 #endif
         if (::connect(s, rp->ai_addr, rp->ai_addrlen) == 0) {
-            // conectado
+            // connected
             sock_ = s;
             freeaddrinfo(res);
             return true;
@@ -194,18 +193,18 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
         return false;
     }
 
-    // Asegurar modo bloqueante y timeout razonable para evitar EAGAIN en auth
+    // Ensure blocking mode and a reasonable timeout to avoid EAGAIN during auth
     libssh2_session_set_blocking(session_, 1);
 #ifdef LIBSSH2_SESSION_TIMEOUT
     libssh2_session_set_timeout(session_, 20000); // 20s
 #endif
 
-    // Keepalive SSH: pedir que libssh2 envíe mensajes cada 30s si el peer lo permite
+    // SSH keepalive: request libssh2 to send messages every 30s if the peer allows it
     libssh2_keepalive_config(session_, 1, 30);
 
-    // Verificación de host key según política de known_hosts
+    // Host key verification according to known_hosts policy
     if (opt.known_hosts_policy == openscp::KnownHostsPolicy::Off) {
-        // Sin verificación: no consultamos known_hosts ni fallamos por mismatch
+        // No verification: do not consult known_hosts and do not fail on mismatch
     } else {
         LIBSSH2_KNOWNHOSTS* nh = libssh2_knownhost_init(session_);
         if (!nh) {
@@ -213,7 +212,7 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
             return false;
         }
 
-        // Ruta efectiva
+        // Effective path
         std::string khPath;
         if (opt.known_hosts_path.has_value()) {
             khPath = *opt.known_hosts_path;
@@ -300,7 +299,7 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
         if (check == LIBSSH2_KNOWNHOST_CHECK_MATCH) {
             libssh2_knownhost_free(nh);
         } else if (opt.known_hosts_policy == openscp::KnownHostsPolicy::AcceptNew && check == LIBSSH2_KNOWNHOST_CHECK_NOTFOUND) {
-            // TOFU: pedir confirmación al usuario si hay callback
+            // TOFU: ask the user for confirmation if a callback is available
             std::string algName;
             switch (keytype) {
                 case LIBSSH2_HOSTKEY_TYPE_RSA: algName = "RSA"; break;
@@ -311,7 +310,7 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
                 case LIBSSH2_HOSTKEY_TYPE_ED25519: algName = "ED25519"; break;
                 default: algName = "DESCONOCIDO"; break;
             }
-            // Obtener huella SHA256 si está disponible
+            // Obtain SHA256 fingerprint if available
             std::string fpStr;
 #ifdef LIBSSH2_HOSTKEY_HASH_SHA256
             const unsigned char* h = (const unsigned char*)libssh2_hostkey_hash(session_, LIBSSH2_HOSTKEY_HASH_SHA256);
@@ -366,7 +365,7 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
             libssh2_knownhost_free(nh);
         } else {
             libssh2_knownhost_free(nh);
-            // Solo Strict debe fallar por mismatch o notfound; AcceptNew ya manejó NOTFOUND arriba
+            // Only Strict should fail on mismatch or notfound; AcceptNew already handled NOTFOUND above
             if (opt.known_hosts_policy == openscp::KnownHostsPolicy::Strict) {
                 err = (check == LIBSSH2_KNOWNHOST_CHECK_MISMATCH)
                           ? "Host key no coincide con known_hosts"
@@ -376,15 +375,15 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
         }
     }
 
-    // Autenticación: preferir el método explícito del usuario.
-    // 1) Si se especificó clave privada: usarla primero.
-    // 2) Si se especificó contraseña: probar password primero; si NO desconecta y falla, consultar métodos y probar kbdint.
-    // 3) En ausencia de credenciales: intentar ssh-agent (si el servidor lo permite); de lo contrario, error.
+    // Authentication: prefer the method explicitly provided by the user.
+    // 1) If a private key is specified: use it first.
+    // 2) If a password is specified: try password first; if connection remains open but fails, query methods and try kbd-int.
+    // 3) If no credentials: try ssh-agent (if the server allows); otherwise, error.
     if (opt.private_key_path.has_value()) {
         const char* passphrase = opt.private_key_passphrase ? opt.private_key_passphrase->c_str() : nullptr;
         int rc = libssh2_userauth_publickey_fromfile(session_,
                                                      opt.username.c_str(),
-                                                     NULL,  // public key path (NULL: se deriva de la privada)
+                                                     NULL,  // public key path (NULL: derived from the private key)
                                                      opt.private_key_path->c_str(),
                                                      passphrase);
         if (rc != 0) {
@@ -392,11 +391,11 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
             return false;
         }
     } else {
-        // Mantener lista de métodos SOLO cuando sea necesaria.
+        // Keep the methods list ONLY when necessary.
         std::string authlist;
         auto hasMethod = [&](const char* m) { return !authlist.empty() && authlist.find(m) != std::string::npos; };
 
-        // Si el usuario proporcionó password: intentarlo primero para evitar agotar intentos con 'none' o agent.
+        // If the user provided a password: try it first to avoid exhausting attempts with 'none' or agent.
         if (opt.password.has_value()) {
             int rc_pw = -1;
             int rc_kbd = -1;
@@ -434,10 +433,10 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
                 kbErrno = libssh2_session_last_errno(session_);
             };
 
-            // ---- Cambio clave: intentar password directamente (sin userauth_list previo).
+            // Attempt password directly (without prior userauth_list).
             do_password();
 
-            // Si el servidor cerró tras password, no seguimos: el resto fallará en cascada.
+            // If the server closed after the password attempt, stop: the rest would cascade-fail.
             if (rc_pw == LIBSSH2_ERROR_SOCKET_DISCONNECT ||
                 rc_pw == LIBSSH2_ERROR_SOCKET_SEND ||
                 rc_pw == LIBSSH2_ERROR_SOCKET_RECV) {
@@ -445,7 +444,7 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
                 return false;
             }
 
-            // Si password no fue exitoso pero la sesión sigue viva, AHORA consultamos métodos y probamos kbd-int si procede.
+            // If password failed but the session is still alive, NOW query methods and try keyboard-interactive if applicable.
             if (rc_pw != 0) {
                 char* methods = libssh2_userauth_list(session_, opt.username.c_str(), (unsigned)opt.username.size());
                 authlist = methods ? std::string(methods) : std::string();
@@ -455,8 +454,8 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
             }
 
             if (rc_pw != 0 && rc_kbd != 0) {
-                // Como último recurso, intentar ssh-agent si el servidor lo permite (limitar identidades).
-                // Necesitamos authlist para saber si permite publickey.
+                // As a last resort, try ssh-agent if the server allows (limit identities).
+                // We need authlist to know if publickey is allowed.
                 if (authlist.empty()) {
                     char* methods = libssh2_userauth_list(session_, opt.username.c_str(), (unsigned)opt.username.size());
                     authlist = methods ? std::string(methods) : std::string();
@@ -470,7 +469,7 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
                             struct libssh2_agent_publickey* identity = nullptr;
                             struct libssh2_agent_publickey* prev = nullptr;
                             int tries = 0;
-                            const int kMaxAgentTries = 3; // limite conservador
+                            const int kMaxAgentTries = 3; // conservative limit
                             while (libssh2_agent_get_identity(agent, &identity, prev) == 0 && tries < kMaxAgentTries) {
                                 prev = identity;
                                 ++tries;
@@ -494,13 +493,13 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
                 }
 
                 if (!authed) {
-                    // Guardar mensaje de error de libssh2 para diagnóstico
+                    // Save libssh2 error message for diagnostics
                     char* emsgPtr = nullptr;
                     int emlen = 0;
                     (void)libssh2_session_last_error(session_, &emsgPtr, &emlen, 0);
                     std::string lastErr = (emsgPtr && emlen > 0) ? std::string(emsgPtr, (size_t)emlen) : std::string();
                     long lastErrno = libssh2_session_last_errno(session_);
-                    // Incluir códigos de retorno para diagnóstico
+                    // Include return codes for diagnostics
                     err = std::string("Auth por password/kbdint falló") +
                           (authlist.empty() ? std::string() : (std::string(" (métodos: ") + authlist + ")")) +
                           (lastErr.empty() ? std::string() : (std::string(" — ") + lastErr)) +
@@ -511,7 +510,7 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
                 }
             }
         } else {
-            // Sin password: consultar métodos y luego intentar ssh-agent si el servidor lo permite.
+            // Without a password: query methods and then try ssh-agent if the server allows.
             if (authlist.empty()) {
                 char* methods = libssh2_userauth_list(session_, opt.username.c_str(), (unsigned)opt.username.size());
                 authlist = methods ? std::string(methods) : std::string();
@@ -622,7 +621,7 @@ bool Libssh2SftpClient::list(const std::string& remote_path,
                                          longentry, sizeof(longentry),
                                          &attrs);
         if (rc > 0) {
-            // rc = nombre_len
+            // rc = name length
             FileInfo fi{};
             fi.name = std::string(filename, rc);
             fi.is_dir = (attrs.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS)
@@ -638,7 +637,7 @@ bool Libssh2SftpClient::list(const std::string& remote_path,
             if (fi.name == "." || fi.name == "..") continue;
             out.push_back(std::move(fi));
         } else if (rc == 0) {
-            // fin de directorio
+            // end of directory
             break;
         } else {
             err = "sftp_readdir_ex falló";
@@ -651,7 +650,7 @@ bool Libssh2SftpClient::list(const std::string& remote_path,
     return true;
 }
 
-// Descarga archivo remoto a local. Reporta progreso e integra cancelación cooperativa.
+// Download a remote file to local. Reports progress and supports cooperative cancellation.
 bool Libssh2SftpClient::get(const std::string& remote,
                             const std::string& local,
                             std::string& err,
@@ -663,7 +662,7 @@ bool Libssh2SftpClient::get(const std::string& remote,
         return false;
     }
 
-    // Tamaño remoto (para progreso)
+    // Remote size (for progress)
     LIBSSH2_SFTP_ATTRIBUTES st{};
     if (libssh2_sftp_stat_ex(sftp_, remote.c_str(), (unsigned)remote.size(),
                              LIBSSH2_SFTP_STAT, &st) != 0) {
@@ -672,7 +671,7 @@ bool Libssh2SftpClient::get(const std::string& remote,
     }
     std::size_t total = (st.flags & LIBSSH2_SFTP_ATTR_SIZE) ? (std::size_t)st.filesize : 0;
 
-    // Abrir remoto para lectura
+    // Open remote for reading
     LIBSSH2_SFTP_HANDLE* rh = libssh2_sftp_open_ex(
         sftp_, remote.c_str(), (unsigned)remote.size(),
         LIBSSH2_FXF_READ, 0, LIBSSH2_SFTP_OPENFILE);
@@ -681,7 +680,7 @@ bool Libssh2SftpClient::get(const std::string& remote,
         return false;
     }
 
-    // Abrir local para escritura, con opción de reanudar
+    // Open local for writing, with optional resume
     FILE* lf = nullptr;
     std::size_t offset = 0;
     if (resume) {
@@ -690,7 +689,7 @@ bool Libssh2SftpClient::get(const std::string& remote,
             long cur = std::ftell(lf);
             if (cur > 0) offset = (std::size_t)cur;
             if (offset > 0 && offset < total) {
-                // posicionar remoto al offset existente
+                // position remote at the existing offset
                 libssh2_sftp_seek64(rh, (libssh2_uint64_t)offset);
             }
         }
@@ -738,7 +737,7 @@ bool Libssh2SftpClient::get(const std::string& remote,
     return true;
 }
 
-// Sube archivo local a remoto (crear/truncar). Reporta progreso y cancelación.
+// Upload a local file to remote (create/truncate). Reports progress and supports cancellation.
 bool Libssh2SftpClient::put(const std::string& local,
                             const std::string& remote,
                             std::string& err,
@@ -750,23 +749,23 @@ bool Libssh2SftpClient::put(const std::string& local,
         return false;
     }
 
-    // Abrir local para lectura
+    // Open local for reading
     FILE* lf = ::fopen(local.c_str(), "rb");
     if (!lf) {
         err = "No se pudo abrir archivo local para lectura";
         return false;
     }
 
-    // Tamaño local
+    // Local size
     std::fseek(lf, 0, SEEK_END);
     long fsz = std::ftell(lf);
     std::fseek(lf, 0, SEEK_SET);
     std::size_t total = fsz > 0 ? (std::size_t)fsz : 0;
 
-    // Abrir remoto para escritura (crea, y opcionalmente reanuda sin truncar)
+    // Open remote for writing (create, optionally resume without truncation)
     long startOffset = 0;
     if (resume) {
-        // Consultar tamaño remoto si existe
+        // Query remote size if it exists
         LIBSSH2_SFTP_ATTRIBUTES stR{};
         if (libssh2_sftp_stat_ex(sftp_, remote.c_str(), (unsigned)remote.size(), LIBSSH2_SFTP_STAT, &stR) == 0) {
             if (stR.flags & LIBSSH2_SFTP_ATTR_SIZE) startOffset = (long)stR.filesize;
@@ -787,7 +786,7 @@ bool Libssh2SftpClient::put(const std::string& local,
     std::vector<char> buf(CHUNK);
     std::size_t done = 0;
 
-    // Si reanudamos, avanzar local y remoto
+    // If resuming, advance local and remote
     if (resume && startOffset > 0 && (std::size_t)startOffset < total) {
         libssh2_sftp_seek64(wh, (libssh2_uint64_t)startOffset);
         if (std::fseek(lf, startOffset, SEEK_SET) != 0) {
@@ -839,7 +838,7 @@ bool Libssh2SftpClient::put(const std::string& local,
     return true;
 }
 
-// Comprobación ligera de existencia usando sftp_stat.
+// Lightweight existence check using sftp_stat.
 bool Libssh2SftpClient::exists(const std::string& remote_path,
                                bool& isDir,
                                std::string& err) {
@@ -858,20 +857,20 @@ bool Libssh2SftpClient::exists(const std::string& remote_path,
         if (st.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS) {
             isDir = ((st.permissions & LIBSSH2_SFTP_S_IFMT) == LIBSSH2_SFTP_S_IFDIR);
         }
-        return true; // existe
+        return true; // exists
     }
 
     unsigned long sftp_err = libssh2_sftp_last_error(sftp_);
     if (sftp_err == LIBSSH2_FX_NO_SUCH_FILE || sftp_err == LIBSSH2_FX_FAILURE) {
         err.clear();
-        return false; // no existe
+        return false; // does not exist
     }
 
     err = "stat remoto falló";
     return false;
 }
 
-// Metadatos remotos detallados (tipo stat). Devuelve false si la ruta no existe.
+// Detailed remote metadata (stat-like). Returns false if the path does not exist.
 bool Libssh2SftpClient::stat(const std::string& remote_path,
                              FileInfo& info,
                              std::string& err) {
@@ -915,7 +914,7 @@ bool Libssh2SftpClient::chmod(const std::string& remote_path,
         return false;
     }
 #ifdef LIBSSH2_SFTP
-    // Por compatibilidad, mediante SETSTAT
+    // For compatibility, via SETSTAT
     LIBSSH2_SFTP_ATTRIBUTES a{};
     a.flags = LIBSSH2_SFTP_ATTR_PERMISSIONS;
     a.permissions = mode;

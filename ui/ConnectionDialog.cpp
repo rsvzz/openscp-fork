@@ -1,4 +1,4 @@
-// Construye el formulario de conexión y expone getters/setters de SessionOptions.
+// Builds the connection form and exposes getters/setters for SessionOptions.
 #include "ConnectionDialog.hpp"
 #include <QFormLayout>
 #include <QDialogButtonBox>
@@ -18,11 +18,11 @@ ConnectionDialog::ConnectionDialog(QWidget* parent) : QDialog(parent) {
     user_ = new QLineEdit(this);
     pass_ = new QLineEdit(this);
 
-    // NUEVO: campos de clave privada (opcionales)
+    // Private key fields (optional)
     keyPath_ = new QLineEdit(this);
     keyPass_ = new QLineEdit(this);
 
-    // Defaults útiles
+    // Useful defaults
     host_->setText("localhost");
     port_->setRange(1, 65535);
     port_->setValue(22);
@@ -48,7 +48,7 @@ ConnectionDialog::ConnectionDialog(QWidget* parent) : QDialog(parent) {
     lay->addRow(tr("known_hosts:"), khPath_);
     lay->addRow(tr("Política:"), khPolicy_);
 
-    // Botón para elegir known_hosts
+    // Button to choose known_hosts
     khBrowse_ = new QPushButton(tr("Elegir known_hosts…"), this);
     lay->addRow("", khBrowse_);
     connect(khBrowse_, &QPushButton::clicked, this, [this] {
@@ -56,8 +56,7 @@ ConnectionDialog::ConnectionDialog(QWidget* parent) : QDialog(parent) {
         if (!f.isEmpty()) khPath_->setText(f);
     });
 
-    // (Opcional) botón para elegir archivo de clave privada
-    // Si lo quieres, descomenta estas 6 líneas:
+    // Optional: button to choose private key file
     
     auto* browseBtn = new QPushButton(tr("Elegir clave…"), this);
     lay->addRow("", browseBtn);
@@ -79,15 +78,15 @@ openscp::SessionOptions ConnectionDialog::options() const {
     o.port     = static_cast<std::uint16_t>(port_->value());
     o.username = user_->text().toStdString();
 
-    // Password (si se escribió)
+    // Password (if provided)
     if (!pass_->text().isEmpty())
         o.password = pass_->text().toUtf8().toStdString();
 
-    // Clave privada (si se escribió)
+    // Private key path (if provided)
     if (!keyPath_->text().isEmpty())
         o.private_key_path = keyPath_->text().toStdString();
 
-    // Passphrase de la clave (si se escribió)
+    // Key passphrase (if provided)
     if (!keyPass_->text().isEmpty())
         o.private_key_passphrase = keyPass_->text().toUtf8().toStdString();
 
@@ -107,7 +106,7 @@ void ConnectionDialog::setOptions(const openscp::SessionOptions& o) {
     if (o.private_key_path && !o.private_key_path->empty()) keyPath_->setText(QString::fromStdString(*o.private_key_path));
     if (o.private_key_passphrase && !o.private_key_passphrase->empty()) keyPass_->setText(QString::fromStdString(*o.private_key_passphrase));
     if (o.known_hosts_path && !o.known_hosts_path->empty()) khPath_->setText(QString::fromStdString(*o.known_hosts_path));
-    // Política
+    // Policy
     int idx = khPolicy_->findData(static_cast<int>(o.known_hosts_policy));
     if (idx >= 0) khPolicy_->setCurrentIndex(idx);
 }

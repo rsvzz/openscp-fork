@@ -1,4 +1,4 @@
-// Implementación del mock: mantiene un mapa de rutas predefinidas para listar.
+// Mock implementation: maintains a map of predefined paths for listing.
 #include "openscp/MockSftpClient.hpp"
 #include <algorithm>
 
@@ -6,6 +6,7 @@ namespace openscp {
 
 bool MockSftpClient::connect(const SessionOptions& opt, std::string& err) {
     if (opt.host.empty() || opt.username.empty()) {
+        // Keep message text as-is (UI/localization). Only comments translated.
         err = "Host y usuario son obligatorios";
         return false;
     }
@@ -49,7 +50,7 @@ bool MockSftpClient::list(const std::string& remote_path,
     }
     out = it->second;
     std::sort(out.begin(), out.end(), [](const FileInfo& a, const FileInfo& b) {
-        if (a.is_dir != b.is_dir) return a.is_dir > b.is_dir; // dirs primero
+        if (a.is_dir != b.is_dir) return a.is_dir > b.is_dir; // directories first
         return a.name < b.name;
     });
     return true;

@@ -1,5 +1,5 @@
-// Interfaz abstracta para operaciones SFTP. Implementaciones concretas (p.ej. libssh2)
-// deben respetar esta API para mantener la UI desacoplada del backend.
+// Abstract interface for SFTP operations. Concrete implementations (e.g., libssh2)
+// must follow this API to keep the UI decoupled from the backend.
 #pragma once
 #include "SftpTypes.hpp"
 #include <functional>
@@ -8,21 +8,21 @@ namespace openscp {
 
 class SftpClient {
 public:
-    using ProgressCB = std::function<void(double)>; // 0..1 (no usado actualmente)
+    using ProgressCB = std::function<void(double)>; // 0..1 (currently unused)
 
     virtual ~SftpClient() = default;
 
-    // Conectar y desconectar
+    // Connect and disconnect
     virtual bool connect(const SessionOptions& opt, std::string& err) = 0;
     virtual void disconnect() = 0;
     virtual bool isConnected() const = 0;
 
-    // Listado de directorio remoto
+    // Remote directory listing
     virtual bool list(const std::string& remote_path,
                       std::vector<FileInfo>& out,
                       std::string& err) = 0;
 
-    // Descargar archivo remoto a local; si resume=true intenta continuar parcial
+    // Download a remote file to local; if resume=true, try to continue a partial download
     virtual bool get(const std::string& remote,
                      const std::string& local,
                      std::string& err,
@@ -30,7 +30,7 @@ public:
                      std::function<bool()> shouldCancel = {},
                      bool resume = false) = 0;
 
-    // Subir archivo local a remoto; si resume=true intenta continuar parcial
+    // Upload a local file to remote; if resume=true, try to continue a partial upload
     virtual bool put(const std::string& local,
                      const std::string& remote,
                      std::string& err,
@@ -38,34 +38,34 @@ public:
                      std::function<bool()> shouldCancel = {},
                      bool resume = false) = 0;
 
-    // Comprobar existencia (deja err vacío si "no existe")
+    // Check existence (leave err empty if "does not exist")
     virtual bool exists(const std::string& remote_path,
                         bool& isDir,
                         std::string& err) = 0;
 
-    // Metadatos detallados (stat). Devuelve true si existe.
+    // Detailed metadata (stat). Returns true if it exists.
     virtual bool stat(const std::string& remote_path,
                       FileInfo& info,
                       std::string& err) = 0;
 
-    // Cambiar permisos (modo POSIX, p.ej. 0644)
+    // Change permissions (POSIX mode, e.g. 0644)
     virtual bool chmod(const std::string& remote_path,
                        std::uint32_t mode,
                        std::string& err) = 0;
 
-    // Cambiar propietario/grupo (si el servidor lo permite)
+    // Change owner/group (if supported by the server)
     virtual bool chown(const std::string& remote_path,
                        std::uint32_t uid,
                        std::uint32_t gid,
                        std::string& err) = 0;
 
-    // Ajustar tiempos (atime/mtime) remotos si el servidor lo permite
+    // Adjust remote times (atime/mtime) if the server supports it
     virtual bool setTimes(const std::string& remote_path,
                           std::uint64_t atime,
                           std::uint64_t mtime,
                           std::string& err) = 0;
 
-    // Operaciones de archivos/carpetas (lado remoto)
+    // Remote file/folder operations
     virtual bool mkdir(const std::string& remote_dir,
                        std::string& err,
                        unsigned int mode = 0755) = 0;
@@ -81,7 +81,7 @@ public:
                         std::string& err,
                         bool overwrite = false) = 0;
 
-    // Crear una nueva conexión del mismo tipo con opciones dadas.
+    // Create a new connection of the same type with the given options.
     virtual std::unique_ptr<SftpClient> newConnectionLike(const SessionOptions& opt,
                                                           std::string& err) = 0;
 };

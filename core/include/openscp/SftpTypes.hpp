@@ -1,5 +1,5 @@
-// Tipos básicos compartidos entre UI y core para sesiones y metadatos SFTP.
-// Mantener estas estructuras simples y serializables facilita su uso en UI.
+// Basic types shared between UI and core for SFTP sessions and metadata.
+// Keeping these structures simple and serializable makes them easy to use in the UI.
 #pragma once
 #include <string>
 #include <vector>
@@ -9,26 +9,26 @@
 
 namespace openscp {
 
-// Política de validación de known_hosts para la clave del servidor.
+// known_hosts validation policy for the server host key.
 enum class KnownHostsPolicy {
-    Strict,     // Requiere coincidencia exacta con known_hosts.
-    AcceptNew,  // TOFU: acepta y guarda nuevos hosts; rechaza cambios de clave.
-    Off         // Sin verificación (no recomendado).
+    Strict,     // Requires exact match with known_hosts.
+    AcceptNew,  // TOFU: accept and save new hosts; reject key changes.
+    Off         // No verification (not recommended).
 };
 
 struct FileInfo {
-    std::string   name;     // nombre base
+    std::string   name;     // base name
     bool          is_dir = false;
-    std::uint64_t size  = 0;  // bytes (si aplica)
-    std::uint64_t mtime = 0;  // epoch (segundos)
-    std::uint32_t mode  = 0;  // bits POSIX (permisos/tipo)
+    std::uint64_t size  = 0;  // bytes (if applicable)
+    std::uint64_t mtime = 0;  // epoch (seconds)
+    std::uint32_t mode  = 0;  // POSIX bits (permissions/type)
     std::uint32_t uid   = 0;
     std::uint32_t gid   = 0;
 };
 
-// Callback para responder a prompts de keyboard-interactive.
-// Debe devolver true y llenar "responses" con un elemento por prompt si el usuario completó la info.
-// Si devuelve false, el backend usará una heurística (usuario/contraseña) como fallback.
+// Callback to answer keyboard-interactive prompts.
+// Must return true and fill "responses" with one entry per prompt if the user provided input.
+// If it returns false, the backend uses a heuristic (username/password) as a fallback.
 using KbdIntPromptsCB = std::function<bool(const std::string& name,
                                            const std::string& instruction,
                                            const std::vector<std::string>& prompts,
@@ -43,18 +43,18 @@ struct SessionOptions {
     std::optional<std::string> private_key_path;
     std::optional<std::string> private_key_passphrase;
 
-    // Seguridad SSH
-    std::optional<std::string> known_hosts_path; // por defecto: ~/.ssh/known_hosts
+    // SSH security
+    std::optional<std::string> known_hosts_path; // default: ~/.ssh/known_hosts
     KnownHostsPolicy known_hosts_policy = KnownHostsPolicy::Strict;
 
-    // Confirmación de huella (TOFU) cuando known_hosts no tiene entrada.
-    // Devuelve true para aceptar y guardar, false para rechazar.
+    // Host key confirmation (TOFU) when known_hosts lacks an entry.
+    // Return true to accept and save, false to reject.
     std::function<bool(const std::string& host,
                        std::uint16_t port,
                        const std::string& algorithm,
                        const std::string& fingerprint)> hostkey_confirm_cb;
 
-    // Manejo personalizado de keyboard-interactive (p. ej., OTP/2FA). Opcional.
+    // Custom handling for keyboard-interactive (e.g., OTP/2FA). Optional.
     KbdIntPromptsCB keyboard_interactive_cb;
 };
 

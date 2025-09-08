@@ -1,4 +1,4 @@
-// Diálogo Acerca de OpenSCP.
+// "About OpenSCP" dialog.
 #pragma once
 #include <QDialog>
 
@@ -9,4 +9,3 @@ class AboutDialog : public QDialog {
 public:
     explicit AboutDialog(QWidget* parent = nullptr);
 };
-

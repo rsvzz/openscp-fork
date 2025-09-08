@@ -1,4 +1,4 @@
-// Cliente SFTP simulado para pruebas de UI sin red.
+// Simulated SFTP client for UI testing without network.
 #pragma once
 #include "SftpClient.hpp"
 #include <unordered_map>
@@ -15,7 +15,7 @@ public:
               std::vector<FileInfo>& out,
               std::string& err) override;
 
-    // Métodos no soportados en el mock; retornan false con mensaje.
+    // Methods not supported in the mock; return false with a message.
     bool get(const std::string& remote,
              const std::string& local,
              std::string& err,
@@ -23,6 +23,7 @@ public:
              std::function<bool()> shouldCancel,
              bool resume) override {
         (void)remote; (void)local; (void)progress; (void)shouldCancel;
+        // Keep message text as-is (UI/localization). Only comments translated.
         err = "Mock no soporta GET";
         return false;
     }
@@ -115,7 +116,7 @@ private:
     bool connected_ = false;
     SessionOptions lastOpt_{};
 
-    // Mini “FS remoto” simulado: path -> vector de entradas
+    // Mini simulated "remote FS": path -> list of entries
     std::unordered_map<std::string, std::vector<FileInfo>> fs_ = {
         { "/", {
             {"home", true, 0, 0},
