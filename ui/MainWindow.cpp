@@ -56,6 +56,8 @@
 #include <QSet>
 #include <QHash>
 #include <QShortcut>
+#include <QToolButton>
+#include <QProcess>
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -123,6 +125,23 @@ static QString tempDownloadPathFor(const QString& remoteName) {
     if (base.isEmpty()) base = QDir::homePath() + "/Downloads";
     QDir().mkpath(base);
     return QDir(base).filePath(remoteName);
+}
+
+// Reveal a file in the system file manager (select/highlight when possible),
+// falling back to opening the containing folder.
+static void revealInFolder(const QString& filePath) {
+#if defined(Q_OS_MAC)
+    // macOS: use 'open -R' to reveal in Finder
+    QProcess::startDetached("open", { "-R", filePath });
+#elif defined(Q_OS_WIN)
+    // Windows: explorer /select,<path>
+    QString arg = "/select," + QDir::toNativeSeparators(filePath);
+    QProcess::startDetached("explorer", { arg });
+#else
+    // Linux/others: try to open the containing directory
+    const QString dir = QFileInfo(filePath).dir().absolutePath();
+    QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+#endif
 }
 
 // Validate simple file/folder names (no paths)
@@ -419,8 +438,22 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     actDisconnect_->setIcon(resIcon("action-disconnect.svg"));
     actDisconnect_->setToolTip(actDisconnect_->text());
     actDisconnect_->setEnabled(false);
+
+    // Show text to the LEFT of the icon for Connect/Disconnect buttons only
+    if (QWidget* w = tb->widgetForAction(actConnect_)) {
+        if (auto* b = qobject_cast<QToolButton*>(w)) {
+            b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+            b->setText(tr("Conectar"));
+        }
+    }
+    if (QWidget* w = tb->widgetForAction(actDisconnect_)) {
+        if (auto* b = qobject_cast<QToolButton*>(w)) {
+            b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+            b->setText(tr("Desconectar"));
+        }
+    }
     tb->addSeparator();
-    actSites_ = tb->addAction(tr("Sitios"), [this] {
+    actSites_ = tb->addAction(tr("Sitios guardados"), [this] {
         SiteManagerDialog dlg(this);
         if (dlg.exec() == QDialog::Accepted) {
             openscp::SessionOptions opt{};
@@ -434,12 +467,25 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     actSites_->setIcon(resIcon("action-open-saved-sites.svg"));
     actSites_->setToolTip(actSites_->text());
     tb->addSeparator();
-    actShowQueue_ = tb->addAction(tr("Cola"), [this] {
+    actShowQueue_ = tb->addAction(tr("Transferencias"), [this] {
         if (!transferDlg_) transferDlg_ = new TransferQueueDialog(transferMgr_, this);
         transferDlg_->show(); transferDlg_->raise(); transferDlg_->activateWindow();
     });
     actShowQueue_->setIcon(resIcon("action-open-transfer-queue.svg"));
     actShowQueue_->setToolTip(actShowQueue_->text());
+    // Show text beside icon for Sites and Queue too
+    if (QWidget* w = tb->widgetForAction(actSites_)) {
+        if (auto* b = qobject_cast<QToolButton*>(w)) {
+            b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+            b->setText(tr("Sitios guardados"));
+        }
+    }
+    if (QWidget* w = tb->widgetForAction(actShowQueue_)) {
+        if (auto* b = qobject_cast<QToolButton*>(w)) {
+            b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+            b->setText(tr("Transferencias"));
+        }
+    }
     // Global shortcut to open the transfer queue
     actShowQueue_->setShortcut(QKeySequence(Qt::Key_F12));
     actShowQueue_->setShortcutContext(Qt::ApplicationShortcut);
@@ -1080,6 +1126,32 @@ void MainWindow::rightItemActivated(const QModelIndex& idx) {
         const QFileInfo fi = rightLocalModel_->fileInfo(idx);
         if (fi.isDir()) {
             setRightRoot(fi.absoluteFilePath());
+        } else if (fi.isFile()) {
+            // Decide open behavior (first-run prompt) for local files
+            const QString localPath = fi.absoluteFilePath();
+            QSettings s("OpenSCP", "OpenSCP");
+            bool chosen = s.value("UI/openBehaviorChosen", false).toBool();
+            bool reveal = s.value("UI/openRevealInFolder", false).toBool();
+            if (!chosen) {
+                QMessageBox box(this);
+                box.setIcon(QMessageBox::Question);
+                box.setWindowTitle(tr("Preferencia de apertura"));
+                box.setText(tr("¿Cómo deseas abrir los archivos por defecto?\nPuedes cambiarlo luego en Ajustes."));
+                // Normal grey: Open file (NoRole). Blue/default: Show folder (AcceptRole).
+                QPushButton* btnOpen = box.addButton(tr("Abrir archivo"), QMessageBox::NoRole);
+                QPushButton* btnReveal = box.addButton(tr("Mostrar carpeta"), QMessageBox::AcceptRole);
+                box.setDefaultButton(btnReveal);
+                box.exec();
+                reveal = (box.clickedButton() == btnReveal);
+                s.setValue("UI/openRevealInFolder", reveal);
+                s.setValue("UI/openBehaviorChosen", true);
+                s.sync();
+                prefOpenRevealInFolder_ = reveal;
+            } else {
+                reveal = prefOpenRevealInFolder_;
+            }
+            if (reveal) revealInFolder(localPath);
+            else QDesktopServices::openUrl(QUrl::fromLocalFile(localPath));
         }
         return;
     }
@@ -1133,7 +1205,37 @@ void MainWindow::rightItemActivated(const QModelIndex& idx) {
             for (const auto& t : tasks) {
                 if (t.type == TransferTask::Type::Download && t.src == remotePath && t.dst == localPath) {
                     if (t.status == TransferTask::Status::Done) {
-                        QDesktopServices::openUrl(QUrl::fromLocalFile(localPath));
+                        // Decide how to open: reveal in folder (security) vs open directly
+                        QSettings s("OpenSCP", "OpenSCP");
+                        bool chosen = s.value("UI/openBehaviorChosen", false).toBool();
+                        bool reveal = s.value("UI/openRevealInFolder", false).toBool();
+                        if (!chosen) {
+                            // Ask the user the first time a file is opened
+                            QMessageBox box(this);
+                            box.setIcon(QMessageBox::Question);
+                            box.setWindowTitle(tr("Preferencia de apertura"));
+                            box.setText(tr("¿Cómo deseas abrir los archivos por defecto?\nPuedes cambiarlo luego en Ajustes."));
+                            // Normal grey: Open file (NoRole). Blue/default: Show folder (AcceptRole).
+                            QPushButton* btnOpen = box.addButton(tr("Abrir archivo"), QMessageBox::NoRole);
+                            QPushButton* btnReveal = box.addButton(tr("Mostrar carpeta"), QMessageBox::AcceptRole);
+                            box.setDefaultButton(btnReveal);
+                            box.exec();
+                            if (box.clickedButton() == btnReveal) {
+                                reveal = true;
+                            } else {
+                                reveal = false;
+                            }
+                            s.setValue("UI/openRevealInFolder", reveal);
+                            s.setValue("UI/openBehaviorChosen", true);
+                            s.sync();
+                            // Keep the in-memory cache aligned
+                            prefOpenRevealInFolder_ = reveal;
+                        } else {
+                            reveal = prefOpenRevealInFolder_;
+                        }
+
+                        if (reveal) revealInFolder(localPath);
+                        else QDesktopServices::openUrl(QUrl::fromLocalFile(localPath));
                         statusBar()->showMessage(tr("Descargado: ") + localPath, 5000);
                         QObject::disconnect(*connPtr);
                         sOpenListeners.remove(key);
@@ -1154,6 +1256,32 @@ void MainWindow::leftItemActivated(const QModelIndex& idx) {
     const QFileInfo fi = leftModel_->fileInfo(idx);
     if (fi.isDir()) {
         setLeftRoot(fi.absoluteFilePath());
+    } else if (fi.isFile()) {
+        // Decide open behavior (first-run prompt) for local files
+        const QString localPath = fi.absoluteFilePath();
+        QSettings s("OpenSCP", "OpenSCP");
+        bool chosen = s.value("UI/openBehaviorChosen", false).toBool();
+        bool reveal = s.value("UI/openRevealInFolder", false).toBool();
+        if (!chosen) {
+            QMessageBox box(this);
+            box.setIcon(QMessageBox::Question);
+            box.setWindowTitle(tr("Preferencia de apertura"));
+            box.setText(tr("¿Cómo deseas abrir los archivos por defecto?\nPuedes cambiarlo luego en Ajustes."));
+            // Normal grey: Open file (NoRole). Blue/default: Show folder (AcceptRole).
+            QPushButton* btnOpen = box.addButton(tr("Abrir archivo"), QMessageBox::NoRole);
+            QPushButton* btnReveal = box.addButton(tr("Mostrar carpeta"), QMessageBox::AcceptRole);
+            box.setDefaultButton(btnReveal);
+            box.exec();
+            reveal = (box.clickedButton() == btnReveal);
+            s.setValue("UI/openRevealInFolder", reveal);
+            s.setValue("UI/openBehaviorChosen", true);
+            s.sync();
+            prefOpenRevealInFolder_ = reveal;
+        } else {
+            reveal = prefOpenRevealInFolder_;
+        }
+        if (reveal) revealInFolder(localPath);
+        else QDesktopServices::openUrl(QUrl::fromLocalFile(localPath));
     }
 }
 
@@ -2251,6 +2379,7 @@ void MainWindow::applyPreferences() {
     QSettings s("OpenSCP", "OpenSCP");
     const bool showHidden = s.value("UI/showHidden", false).toBool();
     const bool singleClick = s.value("UI/singleClick", false).toBool();
+    prefOpenRevealInFolder_ = s.value("UI/openRevealInFolder", false).toBool();
 
     // Local: model filters (hidden on/off)
     auto applyLocalFilters = [&](QFileSystemModel* m) {

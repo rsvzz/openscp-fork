@@ -357,6 +357,18 @@
   <context>
     <name>MainWindow</name>
     <message>
+      <source>Conectar</source>
+      <translation>Connect</translation>
+    </message>
+    <message>
+      <source>Sitios guardados</source>
+      <translation>Saved sites</translation>
+    </message>
+    <message>
+      <source>Transferencias</source>
+      <translation>Transfers</translation>
+    </message>
+    <message>
       <source>OpenSCP (demo) — local/local</source>
       <translation>OpenSCP (demo) — local/local</translation>
     </message>
@@ -423,6 +435,22 @@
     <message>
       <source>Descarga ya encolada</source>
       <translation>Download already queued</translation>
+    </message>
+    <message>
+      <source>Preferencia de apertura</source>
+      <translation>Opening preference</translation>
+    </message>
+    <message>
+      <source>¿Cómo deseas abrir los archivos por defecto?\nPuedes cambiarlo luego en Ajustes.</source>
+      <translation>How do you want to open files by default?\nYou can change this later in Settings.</translation>
+    </message>
+    <message>
+      <source>Abrir archivo</source>
+      <translation>Open file</translation>
+    </message>
+    <message>
+      <source>Mostrar carpeta</source>
+      <translation>Show folder</translation>
     </message>
     <message>
       <source>Encolados: %1 descargas (mover)</source>
@@ -860,6 +888,14 @@ Overwrite?</translation>
     <message>
       <source>Mostrar ventana de conexión al inicio y cuando se cierre la última sesión.</source>
       <translation>Show connection window on startup and when the last session closes.</translation>
+    </message>
+    <message>
+      <source>Abrir archivos mostrando su carpeta en el sistema (recomendado por seguridad).</source>
+      <translation>Open files by revealing their folder in the system (recommended for security).</translation>
+    </message>
+    <message>
+      <source>Al eliminar un sitio en el Gestor, borrar también sus credenciales guardadas.</source>
+      <translation>When deleting a site in the Manager, also remove its stored credentials.</translation>
     </message>
     <message>
       <source>Cerrar</source>

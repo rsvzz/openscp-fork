@@ -150,6 +150,7 @@ private:
     // User preferences
     bool prefShowHidden_ = false;
     bool prefSingleClick_ = false;
+    bool prefOpenRevealInFolder_ = false; // if true, reveal downloaded/opened files in folder instead of opening directly
     QMetaObject::Connection leftClickConn_;
     QMetaObject::Connection rightClickConn_;
 };

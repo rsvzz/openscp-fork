@@ -55,6 +55,24 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
         root->addLayout(row);
     }
 
+    // Open behavior for downloaded/activated files: reveal in folder vs open directly
+    {
+        auto* row = new QHBoxLayout();
+        openInFolder_ = new QCheckBox(tr("Abrir archivos mostrando su carpeta en el sistema (recomendado por seguridad)."), this);
+        row->addWidget(openInFolder_);
+        row->addStretch();
+        root->addLayout(row);
+    }
+
+    // Sites: remove stored credentials when deleting a site (optional, default OFF)
+    {
+        auto* row = new QHBoxLayout();
+        deleteSecretsOnRemove_ = new QCheckBox(tr("Al eliminar un sitio en el Gestor, borrar también sus credenciales guardadas."), this);
+        row->addWidget(deleteSecretsOnRemove_);
+        row->addStretch();
+        root->addLayout(row);
+    }
+
     // Load from QSettings
     QSettings s("OpenSCP", "OpenSCP");
     const QString lang  = s.value("UI/language", "es").toString();
@@ -66,6 +84,10 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     if (showConnOnStart_) showConnOnStart_->setChecked(showConnOnStart);
     const bool singleClick = s.value("UI/singleClick", false).toBool();
     clickMode_->setCurrentIndex(singleClick ? 1 : 0);
+    const bool openInFolder = s.value("UI/openRevealInFolder", false).toBool();
+    if (openInFolder_) openInFolder_->setChecked(openInFolder);
+    const bool deleteSecrets = s.value("Sites/deleteSecretsOnRemove", false).toBool();
+    if (deleteSecretsOnRemove_) deleteSecretsOnRemove_->setChecked(deleteSecrets);
 
     // Buttons row: align to right, order: Close (left) then Apply (right)
     auto* btnRow = new QWidget(this);
@@ -92,6 +114,8 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     connect(clickMode_, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateApplyFromControls);
     connect(showHidden_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
     connect(showConnOnStart_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
+    if (openInFolder_) connect(openInFolder_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
+    if (deleteSecretsOnRemove_) connect(deleteSecretsOnRemove_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
     updateApplyFromControls();
 }
 
@@ -105,6 +129,8 @@ void SettingsDialog::onApply() {
     s.setValue("UI/showConnOnStart", showConnOnStart_ && showConnOnStart_->isChecked());
     const bool singleClick = (clickMode_ && clickMode_->currentData().toInt() == 1);
     s.setValue("UI/singleClick", singleClick);
+    if (openInFolder_) s.setValue("UI/openRevealInFolder", openInFolder_->isChecked());
+    if (deleteSecretsOnRemove_) s.setValue("Sites/deleteSecretsOnRemove", deleteSecretsOnRemove_->isChecked());
     s.sync();
 
     // Only notify if language actually changed
@@ -120,16 +146,22 @@ void SettingsDialog::updateApplyFromControls() {
     const bool showHidden = s.value("UI/showHidden", false).toBool();
     const bool showConnOnStart = s.value("UI/showConnOnStart", true).toBool();
     const bool singleClick = s.value("UI/singleClick", false).toBool();
+    const bool openInFolder = s.value("UI/openRevealInFolder", false).toBool();
+    const bool deleteSecrets = s.value("Sites/deleteSecretsOnRemove", false).toBool();
 
     const QString curLang = langCombo_ ? langCombo_->currentData().toString() : prevLang;
     const bool curShowHidden = showHidden_ && showHidden_->isChecked();
     const bool curShowConn = showConnOnStart_ && showConnOnStart_->isChecked();
     const bool curSingleClick = (clickMode_ && clickMode_->currentData().toInt() == 1);
+    const bool curOpenInFolder = openInFolder_ && openInFolder_->isChecked();
+    const bool curDeleteSecrets = deleteSecretsOnRemove_ && deleteSecretsOnRemove_->isChecked();
 
     const bool modified = (curLang != prevLang) ||
                           (curShowHidden != showHidden) ||
                           (curShowConn != showConnOnStart) ||
-                          (curSingleClick != singleClick);
+                          (curSingleClick != singleClick) ||
+                          (curOpenInFolder != openInFolder) ||
+                          (curDeleteSecrets != deleteSecrets);
     if (applyBtn_) {
         applyBtn_->setEnabled(modified);
         applyBtn_->setDefault(modified);

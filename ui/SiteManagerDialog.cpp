@@ -175,8 +175,18 @@ void SiteManagerDialog::onRemove() {
     int viewRow = sel->selectedRows().first().row();
     int modelIndex = table_->item(viewRow, 0) ? table_->item(viewRow, 0)->data(Qt::UserRole).toInt() : viewRow;
     if (modelIndex < 0 || modelIndex >= sites_.size()) return;
+    // Capture name before removing for optional secret cleanup
+    const QString name = sites_[modelIndex].name;
     sites_.remove(modelIndex);
     saveSites();
+    // Optionally delete stored credentials for this site
+    QSettings s("OpenSCP", "OpenSCP");
+    const bool deleteSecrets = s.value("Sites/deleteSecretsOnRemove", false).toBool();
+    if (deleteSecrets) {
+        SecretStore store;
+        store.removeSecret(QString("site:%1:password").arg(name));
+        store.removeSecret(QString("site:%1:keypass").arg(name));
+    }
     refresh();
 }
 
@@ -207,6 +217,7 @@ bool SiteManagerDialog::selectedOptions(openscp::SessionOptions& out) const {
         // Compatibility: migrate old values from QSettings if present
         QSettings s("OpenSCP", "OpenSCP");
         int n = s.beginReadArray("sites");
+        bool migratedPw = false, migratedKp = false;
         if (modelIndex >= 0 && modelIndex < n) {
             s.setArrayIndex(modelIndex);
             const QString oldPw = s.value("password").toString();
@@ -214,13 +225,24 @@ bool SiteManagerDialog::selectedOptions(openscp::SessionOptions& out) const {
             if (!oldPw.isEmpty()) {
                 out.password = oldPw.toStdString();
                 store.setSecret(QString("site:%1:password").arg(name), oldPw);
+                migratedPw = true;
             }
             if (!oldKp.isEmpty()) {
                 out.private_key_passphrase = oldKp.toStdString();
                 store.setSecret(QString("site:%1:keypass").arg(name), oldKp);
+                migratedKp = true;
             }
         }
         s.endArray();
+        // After migrating, remove legacy keys from QSettings to avoid storing secrets in plaintext
+        if ((migratedPw || migratedKp) && modelIndex >= 0) {
+            s.beginWriteArray("sites");
+            s.setArrayIndex(modelIndex);
+            if (migratedPw) s.remove("password");
+            if (migratedKp) s.remove("keyPass");
+            s.endArray();
+            s.sync();
+        }
     }
     return true;
 }

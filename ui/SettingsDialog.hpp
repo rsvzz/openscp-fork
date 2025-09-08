@@ -20,6 +20,8 @@ private:
     QCheckBox* showHidden_ = nullptr;   // show hidden files
     QComboBox* clickMode_  = nullptr;   // single click vs double click
     QCheckBox* showConnOnStart_ = nullptr; // show site manager at startup and when closing last session
+    QCheckBox* openInFolder_ = nullptr; // open downloaded files by revealing in folder instead of opening directly
+    QCheckBox* deleteSecretsOnRemove_ = nullptr; // when deleting a site, also delete its stored credentials (off by default)
     QPushButton* applyBtn_ = nullptr;   // Apply button (enabled only when modified)
     QPushButton* closeBtn_ = nullptr;   // Close button (never primary/default)
 };

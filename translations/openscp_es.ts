@@ -429,6 +429,22 @@
       <translation>Descarga ya encolada</translation>
     </message>
     <message>
+      <source>Preferencia de apertura</source>
+      <translation>Preferencia de apertura</translation>
+    </message>
+    <message>
+      <source>¿Cómo deseas abrir los archivos por defecto?\nPuedes cambiarlo luego en Ajustes.</source>
+      <translation>¿Cómo deseas abrir los archivos por defecto?\nPuedes cambiarlo luego en Ajustes.</translation>
+    </message>
+    <message>
+      <source>Abrir archivo</source>
+      <translation>Abrir archivo</translation>
+    </message>
+    <message>
+      <source>Mostrar carpeta</source>
+      <translation>Mostrar carpeta</translation>
+    </message>
+    <message>
       <source>Encolados: %1 descargas (mover)</source>
       <translation>Encolados: %1 descargas (mover)</translation>
     </message>
@@ -624,6 +640,18 @@ Huella: %4
   <context>
     <name>MainWindow</name>
     <message>
+      <source>Conectar</source>
+      <translation>Conectar</translation>
+    </message>
+    <message>
+      <source>Sitios guardados</source>
+      <translation>Sitios guardados</translation>
+    </message>
+    <message>
+      <source>Transferencias</source>
+      <translation>Transferencias</translation>
+    </message>
+    <message>
       <source>Configuración…</source>
       <translation>Configuración…</translation>
     </message>
@@ -811,6 +839,14 @@ Huella: %4
     <message>
       <source>Mostrar ventana de conexión al inicio y cuando se cierre la última sesión.</source>
       <translation>Mostrar ventana de conexión al inicio y cuando se cierre la última sesión.</translation>
+    </message>
+    <message>
+      <source>Abrir archivos mostrando su carpeta en el sistema (recomendado por seguridad).</source>
+      <translation>Abrir archivos mostrando su carpeta en el sistema (recomendado por seguridad).</translation>
+    </message>
+    <message>
+      <source>Al eliminar un sitio en el Gestor, borrar también sus credenciales guardadas.</source>
+      <translation>Al eliminar un sitio en el Gestor, borrar también sus credenciales guardadas.</translation>
     </message>
     <message>
       <source>Cerrar</source>
