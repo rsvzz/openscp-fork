@@ -154,6 +154,13 @@ static bool isValidEntryName(const QString& name, QString* why = nullptr) {
         if (why) *why = QCoreApplication::translate("MainWindow", "Nombre inválido: no puede contener separadores ('/' o '\\').");
         return false;
     }
+    for (const QChar& ch : name) {
+        ushort u = ch.unicode();
+        if (u < 0x20u || u == 0x7Fu) { // ASCII control characters
+            if (why) *why = QCoreApplication::translate("MainWindow", "Nombre inválido: no puede tener caracteres de control.");
+            return false;
+        }
+    }
     return true;
 }
 
@@ -1166,6 +1173,9 @@ void MainWindow::rightItemActivated(const QModelIndex& idx) {
         return;
     }
     const QString name = rightRemoteModel_->nameAt(idx);
+    {
+        QString why; if (!isValidEntryName(name, &why)) { QMessageBox::warning(this, tr("Nombre inválido"), why); return; }
+    }
     QString remotePath = rightRemoteModel_->rootPath();
     if (!remotePath.endsWith('/')) remotePath += '/';
     remotePath += name;
@@ -1304,9 +1314,13 @@ void MainWindow::downloadRightToLeft() {
         if (rows.isEmpty()) { QMessageBox::information(this, tr("Descargar"), tr("Nada para descargar.")); return; }
     }
     int enq = 0;
+    int bad = 0;
     const QString remoteBase = rightRemoteModel_->rootPath();
     for (const QModelIndex& idx : rows) {
         const QString name = rightRemoteModel_->nameAt(idx);
+        {
+            QString why; if (!isValidEntryName(name, &why)) { ++bad; continue; }
+        }
         QString rpath = remoteBase;
         if (!rpath.endsWith('/')) rpath += '/';
         rpath += name;
@@ -1324,8 +1338,10 @@ void MainWindow::downloadRightToLeft() {
                 std::string lerr;
                 if (!sftp_->list(curR.toStdString(), out, lerr)) continue;
                 for (const auto& e : out) {
-                    const QString childR = (curR.endsWith('/') ? curR + QString::fromStdString(e.name) : curR + "/" + QString::fromStdString(e.name));
-                    const QString childL = QDir(curL).filePath(QString::fromStdString(e.name));
+                    const QString ename = QString::fromStdString(e.name);
+                    QString why; if (!isValidEntryName(ename, &why)) { ++bad; continue; }
+                    const QString childR = (curR.endsWith('/') ? curR + ename : curR + "/" + ename);
+                    const QString childL = QDir(curL).filePath(ename);
                     if (e.is_dir) stack.push_back({ childR, childL });
                     else { transferMgr_->enqueueDownload(childR, childL); ++enq; }
                 }
@@ -1336,7 +1352,9 @@ void MainWindow::downloadRightToLeft() {
         }
     }
     if (enq > 0) {
-        statusBar()->showMessage(QString(tr("Encolados: %1 descargas")).arg(enq), 4000);
+        QString msg = QString(tr("Encolados: %1 descargas")).arg(enq);
+        if (bad > 0) msg += QString("  |  ") + tr("Omitidos inválidos: %1").arg(bad);
+        statusBar()->showMessage(msg, 4000);
         if (!transferDlg_) transferDlg_ = new TransferQueueDialog(transferMgr_, this);
         transferDlg_->show(); transferDlg_->raise(); transferDlg_->activateWindow();
     }
@@ -1390,9 +1408,13 @@ void MainWindow::copyRightToLeft() {
     // Remote -> Local: enqueue downloads
     if (!sftp_ || !rightRemoteModel_) { QMessageBox::warning(this, tr("SFTP"), tr("No hay sesión SFTP activa.")); return; }
     int enq = 0;
+    int bad = 0;
     const QString remoteBase = rightRemoteModel_->rootPath();
     for (const QModelIndex& idx : rows) {
         const QString name = rightRemoteModel_->nameAt(idx);
+        {
+            QString why; if (!isValidEntryName(name, &why)) { ++bad; continue; }
+        }
         QString rpath = remoteBase;
         if (!rpath.endsWith('/')) rpath += '/';
         rpath += name;
@@ -1410,8 +1432,10 @@ void MainWindow::copyRightToLeft() {
                 std::string lerr;
                 if (!sftp_->list(curR.toStdString(), out, lerr)) continue;
                 for (const auto& e : out) {
-                    const QString childR = (curR.endsWith('/') ? curR + QString::fromStdString(e.name) : curR + "/" + QString::fromStdString(e.name));
-                    const QString childL = QDir(curL).filePath(QString::fromStdString(e.name));
+                    const QString ename = QString::fromStdString(e.name);
+                    QString why; if (!isValidEntryName(ename, &why)) { ++bad; continue; }
+                    const QString childR = (curR.endsWith('/') ? curR + ename : curR + "/" + ename);
+                    const QString childL = QDir(curL).filePath(ename);
                     if (e.is_dir) stack.push_back({ childR, childL });
                     else { transferMgr_->enqueueDownload(childR, childL); ++enq; }
                 }
@@ -1422,7 +1446,9 @@ void MainWindow::copyRightToLeft() {
         }
     }
     if (enq > 0) {
-        statusBar()->showMessage(QString(tr("Encolados: %1 descargas")).arg(enq), 4000);
+        QString msg = QString(tr("Encolados: %1 descargas")).arg(enq);
+        if (bad > 0) msg += QString("  |  ") + tr("Omitidos inválidos: %1").arg(bad);
+        statusBar()->showMessage(msg, 4000);
         if (!transferDlg_) transferDlg_ = new TransferQueueDialog(transferMgr_, this);
         transferDlg_->show(); transferDlg_->raise(); transferDlg_->activateWindow();
     }
@@ -1480,11 +1506,13 @@ void MainWindow::moveRightToLeft() {
     const auto rows = sel->selectedRows(NAME_COL);
     const QString remoteBase = rightRemoteModel_->rootPath();
     QVector<QPair<QString, QString>> pairs; // (remote, local) files to download
+    int bad = 0;
     struct TopSel { QString rpath; bool isDir; };
     QVector<TopSel> top;
     int enq = 0;
     for (const QModelIndex& idx : rows) {
         const QString name = rightRemoteModel_->nameAt(idx);
+        { QString why; if (!isValidEntryName(name, &why)) { ++bad; continue; } }
         QString rpath = remoteBase; if (!rpath.endsWith('/')) rpath += '/'; rpath += name;
         const QString lpath = dst.filePath(name);
         const bool isDir = rightRemoteModel_->isDir(idx);
@@ -1497,8 +1525,10 @@ void MainWindow::moveRightToLeft() {
                 std::vector<openscp::FileInfo> out; std::string lerr;
                 if (!sftp_->list(curR.toStdString(), out, lerr)) continue;
                 for (const auto& e : out) {
-                    const QString childR = (curR.endsWith('/') ? curR + QString::fromStdString(e.name) : curR + "/" + QString::fromStdString(e.name));
-                    const QString childL = QDir(curL).filePath(QString::fromStdString(e.name));
+                    const QString ename = QString::fromStdString(e.name);
+                    QString why; if (!isValidEntryName(ename, &why)) { ++bad; continue; }
+                    const QString childR = (curR.endsWith('/') ? curR + ename : curR + "/" + ename);
+                    const QString childL = QDir(curL).filePath(ename);
                     if (e.is_dir) { stack.push_back({ childR, childL }); }
                     else { QDir().mkpath(QFileInfo(childL).dir().absolutePath()); pairs.push_back({ childR, childL }); }
                 }
@@ -1510,7 +1540,9 @@ void MainWindow::moveRightToLeft() {
     }
     for (const auto& p : pairs) { transferMgr_->enqueueDownload(p.first, p.second); ++enq; }
     if (enq > 0) {
-        statusBar()->showMessage(QString(tr("Encolados: %1 descargas (mover)")).arg(enq), 4000);
+        QString msg = QString(tr("Encolados: %1 descargas (mover)")).arg(enq);
+        if (bad > 0) msg += QString("  |  ") + tr("Omitidos inválidos: %1").arg(bad);
+        statusBar()->showMessage(msg, 4000);
         if (!transferDlg_) transferDlg_ = new TransferQueueDialog(transferMgr_, this);
         transferDlg_->show(); transferDlg_->raise(); transferDlg_->activateWindow();
     }
@@ -2194,10 +2226,12 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
                 if (!sel || sel->selectedRows(NAME_COL).isEmpty()) { dd->acceptProposedAction(); return true; }
                 const auto rows = sel->selectedRows(NAME_COL);
                 int enq = 0;
+                int bad = 0;
                 const QString remoteBase = rightRemoteModel_->rootPath();
                 QDir dst(leftPath_->text());
                 for (const QModelIndex& idx : rows) {
                     const QString name = rightRemoteModel_->nameAt(idx);
+                    { QString why; if (!isValidEntryName(name, &why)) { ++bad; continue; } }
                     QString rpath = remoteBase;
                     if (!rpath.endsWith('/')) rpath += '/';
                     rpath += name;
@@ -2215,8 +2249,10 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
                             std::string lerr;
                             if (!sftp_->list(curR.toStdString(), out, lerr)) continue;
                             for (const auto& e : out) {
-                                const QString childR = (curR.endsWith('/') ? curR + QString::fromStdString(e.name) : curR + "/" + QString::fromStdString(e.name));
-                                const QString childL = QDir(curL).filePath(QString::fromStdString(e.name));
+                                const QString ename = QString::fromStdString(e.name);
+                                QString why; if (!isValidEntryName(ename, &why)) { ++bad; continue; }
+                                const QString childR = (curR.endsWith('/') ? curR + ename : curR + "/" + ename);
+                                const QString childL = QDir(curL).filePath(ename);
                                 if (e.is_dir) stack.push_back({ childR, childL });
                                 else { transferMgr_->enqueueDownload(childR, childL); ++enq; }
                             }
@@ -2227,7 +2263,9 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
                     }
                 }
                 if (enq > 0) {
-                    statusBar()->showMessage(QString(tr("Encolados: %1 descargas (DND)")).arg(enq), 4000);
+                    QString msg = QString(tr("Encolados: %1 descargas (DND)")).arg(enq);
+                    if (bad > 0) msg += QString("  |  ") + tr("Omitidos inválidos: %1").arg(bad);
+                    statusBar()->showMessage(msg, 4000);
                     if (!transferDlg_) transferDlg_ = new TransferQueueDialog(transferMgr_, this);
                     transferDlg_->show(); transferDlg_->raise(); transferDlg_->activateWindow();
                 }

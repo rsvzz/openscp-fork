@@ -10,6 +10,10 @@
 #include <chrono>
 #include <thread>
 #include <cstdlib>
+#ifndef _WIN32
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 #include <cstdio>
 #include <sstream>
 
@@ -360,6 +364,11 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
             if (opt.port != 22) {
                 hostForKnown = std::string("[") + opt.host + "]:" + std::to_string(opt.port);
             }
+            // Track whether the known_hosts file existed before writing (POSIX only)
+#ifndef _WIN32
+            bool khExistedBefore = (access(khPath.c_str(), F_OK) == 0);
+#endif
+
             int addrc = libssh2_knownhost_addc(nh, hostForKnown.c_str(), nullptr,
                                                hostkey, (size_t)keylen,
                                                nullptr, 0, addMask, nullptr);
@@ -368,6 +377,12 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
                 err = "No se pudo agregar/escribir host en known_hosts";
                 return false;
             }
+            // Harden permissions for newly created known_hosts on POSIX
+#ifndef _WIN32
+            if (!khExistedBefore) {
+                (void)::chmod(khPath.c_str(), 0600);
+            }
+#endif
             libssh2_knownhost_free(nh);
         } else {
             libssh2_knownhost_free(nh);

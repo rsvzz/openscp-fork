@@ -51,8 +51,8 @@ void SecretStore::setSecret(const QString& key, const QString& value) {
     if (st == errSecItemNotFound) {
         // Create new item
         CFDictionarySetValue(query, kSecValueData, data);
-        // Optional accessibility: after first unlock
-        CFDictionarySetValue(query, kSecAttrAccessible, kSecAttrAccessibleAfterFirstUnlock);
+        // Accessibility: safer default — only when unlocked and non-migratable to other devices
+        CFDictionarySetValue(query, kSecAttrAccessible, kSecAttrAccessibleWhenUnlockedThisDeviceOnly);
         (void)SecItemAdd(query, nullptr);
     }
 

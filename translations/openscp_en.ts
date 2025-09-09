@@ -658,6 +658,14 @@ Continue?</translation>
       <translation>Source entry is neither file nor folder.</translation>
     </message>
     <message>
+      <source>Nombre inválido: no puede tener caracteres de control.</source>
+      <translation>Invalid name: cannot contain control characters.</translation>
+    </message>
+    <message>
+      <source>Omitidos inválidos: %1</source>
+      <translation>Skipped invalid: %1</translation>
+    </message>
+    <message>
       <source>Mover</source>
       <translation>Move</translation>
     </message>

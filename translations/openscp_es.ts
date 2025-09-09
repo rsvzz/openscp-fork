@@ -636,6 +636,14 @@ Huella: %4
       <source>Entrada de origen ni archivo ni carpeta.</source>
       <translation>Entrada de origen ni archivo ni carpeta.</translation>
     </message>
+    <message>
+      <source>Nombre inválido: no puede tener caracteres de control.</source>
+      <translation>Nombre inválido: no puede tener caracteres de control.</translation>
+    </message>
+    <message>
+      <source>Omitidos inválidos: %1</source>
+      <translation>Omitidos inválidos: %1</translation>
+    </message>
   </context>
   <context>
     <name>MainWindow</name>
