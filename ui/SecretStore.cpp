@@ -1,4 +1,4 @@
-// SecretStore implementation: Keychain (macOS) or optional fallback with QSettings.
+// SecretStore implementation: Keychain (macOS), Libsecret (Linux), or optional fallback with QSettings.
 #include "SecretStore.hpp"
 #include <QSettings>
 #include <QByteArray>
@@ -31,6 +31,12 @@ void SecretStore::setSecret(const QString& key, const QString& value) {
         dataBytes.size()
     );
 
+    // Accessibility policy based on user preference (default: less restrictive OFF)
+    QSettings s("OpenSCP", "OpenSCP");
+    const bool restrictive = s.value("Security/macKeychainRestrictive", false).toBool();
+    CFTypeRef chosenAttr = restrictive ? kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+                                       : kSecAttrAccessibleAfterFirstUnlock;
+
     // Query to locate the existing item
     CFMutableDictionaryRef query = CFDictionaryCreateMutable(
         kCFAllocatorDefault, 0,
@@ -46,13 +52,14 @@ void SecretStore::setSecret(const QString& key, const QString& value) {
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks
     );
     CFDictionarySetValue(attrs, kSecValueData, data);
+    CFDictionarySetValue(attrs, kSecAttrAccessible, chosenAttr);
     OSStatus st = SecItemUpdate(query, attrs);
 
     if (st == errSecItemNotFound) {
         // Create new item
         CFDictionarySetValue(query, kSecValueData, data);
-        // Accessibility: safer default — only when unlocked and non-migratable to other devices
-        CFDictionarySetValue(query, kSecAttrAccessible, kSecAttrAccessibleWhenUnlockedThisDeviceOnly);
+        // Accessibility according to preference
+        CFDictionarySetValue(query, kSecAttrAccessible, chosenAttr);
         (void)SecItemAdd(query, nullptr);
     }
 
@@ -109,11 +116,63 @@ bool SecretStore::insecureFallbackActive() {
     return false;
 }
 
-#else // non-Apple: optional insecure fallback controlled by env var
+#elif defined(HAVE_LIBSECRET) // Linux with Libsecret/Secret Service
+
+#include <libsecret/secret.h>
+
+static const SecretSchema* openscp_schema() {
+    static const SecretSchema schema = {
+        "openscp.secret", SECRET_SCHEMA_NONE,
+        {
+            { "key", SECRET_SCHEMA_ATTRIBUTE_STRING },
+            { NULL, 0 }
+        }
+    };
+    return &schema;
+}
+
+void SecretStore::setSecret(const QString& key, const QString& value) {
+    QByteArray k = key.toUtf8();
+    QByteArray v = value.toUtf8();
+    secret_password_store_sync(openscp_schema(), SECRET_COLLECTION_DEFAULT,
+                               "OpenSCP secret", v.constData(), nullptr,
+                               "key", k.constData(), nullptr);
+}
+
+std::optional<QString> SecretStore::getSecret(const QString& key) const {
+    QByteArray k = key.toUtf8();
+    gchar* pw = secret_password_lookup_sync(openscp_schema(), nullptr,
+                                            "key", k.constData(), nullptr);
+    if (!pw) return std::nullopt;
+    QString out = QString::fromUtf8(pw);
+    secret_password_free(pw);
+    return out.isEmpty() ? std::nullopt : std::optional<QString>(out);
+}
+
+void SecretStore::removeSecret(const QString& key) {
+    QByteArray k = key.toUtf8();
+    (void)secret_password_clear_sync(openscp_schema(), nullptr,
+                                     "key", k.constData(), nullptr);
+}
+
+bool SecretStore::insecureFallbackActive() {
+    return false; // Using Libsecret (secure)
+}
+
+#else // non-Apple and without Libsecret: optional insecure fallback controlled by env var or settings
 
 static bool fallbackEnabledEnv() {
     const char* v = std::getenv("OPEN_SCP_ENABLE_INSECURE_FALLBACK");
     return v && *v == '1';
+}
+
+static bool fallbackEnabledConfigured() {
+    QSettings s("OpenSCP", "OpenSCP");
+    return s.value("Security/enableInsecureSecretFallback", false).toBool();
+}
+
+static bool fallbackEnabled() {
+    return fallbackEnabledEnv() || fallbackEnabledConfigured();
 }
 
 void SecretStore::setSecret(const QString& key, const QString& value) {
@@ -121,7 +180,7 @@ void SecretStore::setSecret(const QString& key, const QString& value) {
     Q_UNUSED(key); Q_UNUSED(value);
     return; // disabled by secure build
 #else
-    if (!fallbackEnabledEnv()) return;
+    if (!fallbackEnabled()) return;
     QSettings s("OpenSCP", "Secrets");
     s.setValue(key, value);
 #endif
@@ -132,7 +191,7 @@ std::optional<QString> SecretStore::getSecret(const QString& key) const {
     Q_UNUSED(key);
     return std::nullopt;
 #else
-    if (!fallbackEnabledEnv()) return std::nullopt;
+    if (!fallbackEnabled()) return std::nullopt;
     QSettings s("OpenSCP", "Secrets");
     QVariant v = s.value(key);
     if (!v.isValid()) return std::nullopt;
@@ -145,7 +204,7 @@ void SecretStore::removeSecret(const QString& key) {
     Q_UNUSED(key);
     return;
 #else
-    if (!fallbackEnabledEnv()) return;
+    if (!fallbackEnabled()) return;
     QSettings s("OpenSCP", "Secrets");
     s.remove(key);
 #endif
@@ -155,7 +214,7 @@ bool SecretStore::insecureFallbackActive() {
 #ifdef OPEN_SCP_BUILD_SECURE_ONLY
     return false;
 #else
-    return fallbackEnabledEnv();
+    return fallbackEnabled();
 #endif
 }
 

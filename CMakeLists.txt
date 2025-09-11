@@ -39,6 +39,17 @@ add_executable(openscp_hello
   ui/AboutDialog.cpp
 )
 
+# Libsecret (Linux): link if available to store secrets securely
+find_package(PkgConfig QUIET)
+if (PkgConfig_FOUND)
+  pkg_check_modules(LIBSECRET QUIET libsecret-1)
+  if (LIBSECRET_FOUND)
+    target_include_directories(openscp_hello PRIVATE ${LIBSECRET_INCLUDE_DIRS})
+    target_link_libraries(openscp_hello PRIVATE ${LIBSECRET_LIBRARIES})
+    target_compile_definitions(openscp_hello PRIVATE HAVE_LIBSECRET=1)
+  endif()
+endif()
+
 # Generate a header with the application version from CMake project version
 configure_file(ui/AppVersion.hpp.in ${CMAKE_CURRENT_BINARY_DIR}/AppVersion.hpp @ONLY)
 

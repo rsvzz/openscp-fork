@@ -90,4 +90,7 @@ private:
     bool sshHandshakeAuth(const SessionOptions& opt, std::string& err);
 };
 
+// Utility: remove a known_hosts entry for host:port and rewrite the file atomically.
+bool RemoveKnownHostEntry(const std::string& khPath, const std::string& host, std::uint16_t port, std::string& err);
+
 } // namespace openscp

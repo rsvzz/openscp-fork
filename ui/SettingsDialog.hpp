@@ -22,6 +22,12 @@ private:
     QCheckBox* showConnOnStart_ = nullptr; // show site manager at startup and when closing last session
     QCheckBox* openInFolder_ = nullptr; // open downloaded files by revealing in folder instead of opening directly
     QCheckBox* deleteSecretsOnRemove_ = nullptr; // when deleting a site, also delete its stored credentials (off by default)
+#if defined(Q_OS_MAC) || defined(Q_OS_MACOS) || defined(__APPLE__)
+    QCheckBox* macKeychainRestrictive_ = nullptr; // macOS: stricter Keychain accessibility (this device only)
+#endif
+    QCheckBox* knownHostsHashed_ = nullptr; // save hostnames hashed in known_hosts (recommended)
+    QCheckBox* fpHex_ = nullptr; // show fingerprints in HEX colon format (visual only)
+    QCheckBox* insecureFallback_ = nullptr; // allow insecure secret fallback (not recommended)
     QPushButton* applyBtn_ = nullptr;   // Apply button (enabled only when modified)
     QPushButton* closeBtn_ = nullptr;   // Close button (never primary/default)
 };

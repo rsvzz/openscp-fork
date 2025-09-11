@@ -10,6 +10,7 @@
 #include <QInputDialog>
 #include <QLineEdit>
 #include "SecretStore.hpp"
+#include "openscp/Libssh2SftpClient.hpp"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -206,34 +207,8 @@ void SiteManagerDialog::onRemove() {
         }
         QFileInfo khInfo(khPath);
         if (khInfo.exists() && khInfo.isFile()) {
-            const QString host = removedHost;
-            const std::uint16_t port = removedPort;
-            // Format host key as written by our client
-            QString hostKey = host;
-            if (port != 22) hostKey = QString("[%1]:%2").arg(host).arg(port);
-            // Filter file lines: remove entries whose first field matches hostKey
-            QFile inFile(khPath);
-            if (inFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                QList<QByteArray> lines;
-                while (!inFile.atEnd()) {
-                    QByteArray line = inFile.readLine();
-                    QByteArray trimmed = line.trimmed();
-                    if (trimmed.isEmpty() || trimmed.startsWith('#')) { lines.push_back(line); continue; }
-                    int sep = trimmed.indexOf(' ');
-                    QByteArray first = sep >= 0 ? trimmed.left(sep) : trimmed;
-                    if (first == hostKey.toUtf8()) {
-                        // skip this line (removing host entry)
-                        continue;
-                    }
-                    lines.push_back(line);
-                }
-                inFile.close();
-                QSaveFile outFile(khPath);
-                if (outFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-                    for (const QByteArray& l : lines) outFile.write(l);
-                    outFile.commit();
-                }
-            }
+            std::string rmerr;
+            (void)openscp::RemoveKnownHostEntry(khPath.toStdString(), removedHost.toStdString(), removedPort, rmerr);
         }
     }
     refresh();
@@ -250,6 +225,12 @@ bool SiteManagerDialog::selectedOptions(openscp::SessionOptions& out) const {
     int modelIndex = table_->item(viewRow, 0) ? table_->item(viewRow, 0)->data(Qt::UserRole).toInt() : viewRow;
     if (modelIndex < 0 || modelIndex >= sites_.size()) return false;
     out = sites_[modelIndex].opt;
+    // Apply global security preferences
+    {
+        QSettings s("OpenSCP", "OpenSCP");
+        out.known_hosts_hash_names = s.value("Security/knownHostsHashed", true).toBool();
+        out.show_fp_hex = s.value("Security/fpHex", false).toBool();
+    }
     // Fill secrets at connection time
     SecretStore store;
     const QString name = sites_[modelIndex].name;

@@ -9,6 +9,7 @@
 #include <QSettings>
 #include <QMessageBox>
 #include <QCheckBox>
+#include <QToolButton>
 
 SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     setWindowTitle(tr("Ajustes"));
@@ -58,20 +59,76 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     // Open behavior for downloaded/activated files: reveal in folder vs open directly
     {
         auto* row = new QHBoxLayout();
-        openInFolder_ = new QCheckBox(tr("Abrir archivos mostrando su carpeta en el sistema (recomendado por seguridad)."), this);
+        openInFolder_ = new QCheckBox(tr("Abrir archivos mostrando su carpeta en el sistema (recomendado)."), this);
         row->addWidget(openInFolder_);
         row->addStretch();
         root->addLayout(row);
     }
 
-    // Sites: remove stored credentials when deleting a site (optional, default OFF)
+    // Collapsible Advanced section
+    auto* advHeader = new QToolButton(this);
+    advHeader->setText(tr("Avanzado"));
+    advHeader->setCheckable(true);
+    advHeader->setChecked(false);
+    advHeader->setArrowType(Qt::RightArrow);
+    advHeader->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    root->addWidget(advHeader);
+
+    QWidget* advPanel = new QWidget(this);
+    auto* adv = new QVBoxLayout(advPanel);
+    adv->setContentsMargins(0,0,0,0);
+    adv->setSpacing(root->spacing());
+    // Sites: remove stored credentials when deleting a site (optional, default OFF) — first in advanced
+    deleteSecretsOnRemove_ = new QCheckBox(tr("Al eliminar un sitio, borrar también sus credenciales guardadas."), advPanel);
     {
         auto* row = new QHBoxLayout();
-        deleteSecretsOnRemove_ = new QCheckBox(tr("Al eliminar un sitio en el Gestor, borrar también sus credenciales guardadas."), this);
         row->addWidget(deleteSecretsOnRemove_);
         row->addStretch();
-        root->addLayout(row);
+        adv->addLayout(row);
     }
+    // known_hosts: save hostnames hashed (recommended)
+    knownHostsHashed_ = new QCheckBox(tr("Guardar hostnames en known_hosts como hash (recomendado)."), advPanel);
+    {
+        auto* row = new QHBoxLayout();
+        row->addWidget(knownHostsHashed_);
+        row->addStretch();
+        adv->addLayout(row);
+    }
+    // Fingerprint visual: show HEX colon format (visual only)
+    fpHex_ = new QCheckBox(tr("Mostrar huella en HEX colonado (solo visual)."), advPanel);
+    {
+        auto* row = new QHBoxLayout();
+        row->addWidget(fpHex_);
+        row->addStretch();
+        adv->addLayout(row);
+    }
+#if defined(Q_OS_MAC) || defined(Q_OS_MACOS) || defined(__APPLE__)
+    // macOS: Keychain accessibility policy (stricter vs more convenient)
+    macKeychainRestrictive_ = new QCheckBox(tr("Usar accesibilidad de llavero más restrictiva (solo en este dispositivo)."), advPanel);
+    {
+        auto* row = new QHBoxLayout();
+        row->addWidget(macKeychainRestrictive_);
+        row->addStretch();
+        adv->addLayout(row);
+    }
+#endif
+    // Insecure fallback (not recommended): allow QSettings storage
+    insecureFallback_ = new QCheckBox(tr("Permitir fallback inseguro de credenciales (no recomendado)."), advPanel);
+    {
+        auto* row = new QHBoxLayout();
+        row->addWidget(insecureFallback_);
+        row->addStretch();
+        adv->addLayout(row);
+    }
+    adv->addStretch();
+    advPanel->setVisible(false);
+    root->addWidget(advPanel);
+    connect(advHeader, &QToolButton::toggled, this, [this, advPanel, advHeader](bool on){
+        advPanel->setVisible(on);
+        advHeader->setArrowType(on ? Qt::DownArrow : Qt::RightArrow);
+        this->adjustSize();
+    });
+    // Do not persist expansion state across sessions; default collapsed
 
     // Load from QSettings
     QSettings s("OpenSCP", "OpenSCP");
@@ -88,6 +145,23 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     if (openInFolder_) openInFolder_->setChecked(openInFolder);
     const bool deleteSecrets = s.value("Sites/deleteSecretsOnRemove", false).toBool();
     if (deleteSecretsOnRemove_) deleteSecretsOnRemove_->setChecked(deleteSecrets);
+    const bool knownHashed = s.value("Security/knownHostsHashed", true).toBool();
+    if (knownHostsHashed_) knownHostsHashed_->setChecked(knownHashed);
+    const bool fpHex = s.value("Security/fpHex", false).toBool();
+    if (fpHex_) fpHex_->setChecked(fpHex);
+#ifndef __APPLE__
+    const bool insecureFb = s.value("Security/enableInsecureSecretFallback", false).toBool();
+    if (insecureFallback_) insecureFallback_->setChecked(insecureFb);
+#endif
+#if defined(Q_OS_MAC) || defined(Q_OS_MACOS) || defined(__APPLE__)
+    const bool macRestrictiveLoad = s.value("Security/macKeychainRestrictive", false).toBool();
+    if (macKeychainRestrictive_) macKeychainRestrictive_->setChecked(macRestrictiveLoad);
+#endif
+    // Advanced starts collapsed by default
+    this->adjustSize();
+
+    // Make the dialog auto-fit contents (shrink/grow when Advanced is collapsed/expanded)
+    root->setSizeConstraint(QLayout::SetFixedSize);
 
     // Buttons row: align to right, order: Close (left) then Apply (right)
     auto* btnRow = new QWidget(this);
@@ -116,6 +190,30 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     connect(showConnOnStart_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
     if (openInFolder_) connect(openInFolder_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
     if (deleteSecretsOnRemove_) connect(deleteSecretsOnRemove_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
+    if (knownHostsHashed_) connect(knownHostsHashed_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
+    if (fpHex_) connect(fpHex_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
+#if defined(Q_OS_MAC) || defined(Q_OS_MACOS) || defined(__APPLE__)
+    if (macKeychainRestrictive_) connect(macKeychainRestrictive_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
+#endif
+    if (insecureFallback_) {
+        connect(insecureFallback_, &QCheckBox::toggled, this, [this](bool on){
+            if (on) {
+                auto ret = QMessageBox::warning(this,
+                                                tr("Activar fallback inseguro"),
+                                                tr("Esto almacenará credenciales sin cifrar en el disco usando QSettings.\n"
+                                                   "En Linux, se recomienda instalar y usar libsecret/Secret Service para mayor seguridad.\n\n"
+                                                   "¿Deseas activar el fallback inseguro igualmente?"),
+                                                QMessageBox::Yes | QMessageBox::No,
+                                                QMessageBox::No);
+                if (ret != QMessageBox::Yes) {
+                    insecureFallback_->blockSignals(true);
+                    insecureFallback_->setChecked(false);
+                    insecureFallback_->blockSignals(false);
+                }
+            }
+            updateApplyFromControls();
+        });
+    }
     updateApplyFromControls();
 }
 
@@ -131,6 +229,12 @@ void SettingsDialog::onApply() {
     s.setValue("UI/singleClick", singleClick);
     if (openInFolder_) s.setValue("UI/openRevealInFolder", openInFolder_->isChecked());
     if (deleteSecretsOnRemove_) s.setValue("Sites/deleteSecretsOnRemove", deleteSecretsOnRemove_->isChecked());
+    if (knownHostsHashed_) s.setValue("Security/knownHostsHashed", knownHostsHashed_->isChecked());
+    if (fpHex_) s.setValue("Security/fpHex", fpHex_->isChecked());
+#if defined(Q_OS_MAC) || defined(Q_OS_MACOS) || defined(__APPLE__)
+    if (macKeychainRestrictive_) s.setValue("Security/macKeychainRestrictive", macKeychainRestrictive_->isChecked());
+#endif
+    if (insecureFallback_) s.setValue("Security/enableInsecureSecretFallback", insecureFallback_->isChecked());
     s.sync();
 
     // Only notify if language actually changed
@@ -148,6 +252,11 @@ void SettingsDialog::updateApplyFromControls() {
     const bool singleClick = s.value("UI/singleClick", false).toBool();
     const bool openInFolder = s.value("UI/openRevealInFolder", false).toBool();
     const bool deleteSecrets = s.value("Sites/deleteSecretsOnRemove", false).toBool();
+    const bool knownHashed = s.value("Security/knownHostsHashed", true).toBool();
+    const bool fpHex = s.value("Security/fpHex", false).toBool();
+#ifndef __APPLE__
+    const bool insecureFb = s.value("Security/enableInsecureSecretFallback", false).toBool();
+#endif
 
     const QString curLang = langCombo_ ? langCombo_->currentData().toString() : prevLang;
     const bool curShowHidden = showHidden_ && showHidden_->isChecked();
@@ -155,13 +264,24 @@ void SettingsDialog::updateApplyFromControls() {
     const bool curSingleClick = (clickMode_ && clickMode_->currentData().toInt() == 1);
     const bool curOpenInFolder = openInFolder_ && openInFolder_->isChecked();
     const bool curDeleteSecrets = deleteSecretsOnRemove_ && deleteSecretsOnRemove_->isChecked();
+    const bool curKnownHashed = knownHostsHashed_ && knownHostsHashed_->isChecked();
+    const bool curFpHex = fpHex_ && fpHex_->isChecked();
+#ifndef __APPLE__
+    const bool curInsecureFb = insecureFallback_ && insecureFallback_->isChecked();
+#endif
 
     const bool modified = (curLang != prevLang) ||
                           (curShowHidden != showHidden) ||
                           (curShowConn != showConnOnStart) ||
                           (curSingleClick != singleClick) ||
                           (curOpenInFolder != openInFolder) ||
-                          (curDeleteSecrets != deleteSecrets);
+                          (curDeleteSecrets != deleteSecrets) ||
+                          (curKnownHashed != knownHashed) ||
+                          (curFpHex != fpHex)
+#ifndef __APPLE__
+                          || (curInsecureFb != insecureFb)
+#endif
+                          ;
     if (applyBtn_) {
         applyBtn_->setEnabled(modified);
         applyBtn_->setDefault(modified);

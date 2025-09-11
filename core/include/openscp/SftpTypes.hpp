@@ -46,6 +46,10 @@ struct SessionOptions {
     // SSH security
     std::optional<std::string> known_hosts_path; // default: ~/.ssh/known_hosts
     KnownHostsPolicy known_hosts_policy = KnownHostsPolicy::Strict;
+    // Whether to hash hostnames when saving to known_hosts (OpenSSH hashed hosts)
+    bool known_hosts_hash_names = true;
+    // Visual preference: show fingerprint in HEX colon format (UI only)
+    bool show_fp_hex = false;
 
     // Host key confirmation (TOFU) when known_hosts lacks an entry.
     // Return true to accept and save, false to reject.

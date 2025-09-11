@@ -717,7 +717,7 @@ Continue?</translation>
       <translation>About OpenSCP</translation>
     </message>
     <message>
-      <source>Configuración…</source>
+      <source>Ajustes…</source>
       <translation>Settings…</translation>
     </message>
     <message>
@@ -842,6 +842,10 @@ Overwrite?</translation>
   <context>
     <name>SettingsDialog</name>
     <message>
+      <source>Avanzado</source>
+      <translation>Advanced</translation>
+    </message>
+    <message>
       <source>Configuración</source>
       <translation>Settings</translation>
     </message>
@@ -898,12 +902,12 @@ Overwrite?</translation>
       <translation>Show connection window on startup and when the last session closes.</translation>
     </message>
     <message>
-      <source>Abrir archivos mostrando su carpeta en el sistema (recomendado por seguridad).</source>
-      <translation>Open files by revealing their folder in the system (recommended for security).</translation>
+      <source>Abrir archivos mostrando su carpeta en el sistema (recomendado).</source>
+      <translation>Open files by revealing their folder in the system (recommended).</translation>
     </message>
     <message>
-      <source>Al eliminar un sitio en el Gestor, borrar también sus credenciales guardadas.</source>
-      <translation>When deleting a site in the Manager, also remove its stored credentials.</translation>
+      <source>Al eliminar un sitio, borrar también sus credenciales guardadas.</source>
+      <translation>When deleting a site, also remove its stored credentials.</translation>
     </message>
     <message>
       <source>Cerrar</source>
@@ -912,6 +916,30 @@ Overwrite?</translation>
     <message>
       <source>Aplicar</source>
       <translation>Apply</translation>
+    </message>
+    <message>
+      <source>Usar accesibilidad de llavero más restrictiva (solo en este dispositivo).</source>
+      <translation>Use stricter Keychain accessibility (this device only).</translation>
+    </message>
+    <message>
+      <source>Guardar hostnames en known_hosts como hash (recomendado).</source>
+      <translation>Hash hostnames in known_hosts (recommended).</translation>
+    </message>
+    <message>
+      <source>Mostrar huella en HEX colonado (solo visual).</source>
+      <translation>Show fingerprint in HEX (colon) format (visual only).</translation>
+    </message>
+    <message>
+      <source>Permitir fallback inseguro de credenciales (no recomendado).</source>
+      <translation>Allow insecure credentials fallback (not recommended).</translation>
+    </message>
+    <message>
+      <source>Activar fallback inseguro</source>
+      <translation>Enable insecure fallback</translation>
+    </message>
+    <message>
+      <source>Esto almacenará credenciales sin cifrar en el disco usando QSettings.\nEn Linux, se recomienda instalar y usar libsecret/Secret Service para mayor seguridad.\n\n¿Deseas activar el fallback inseguro igualmente?</source>
+      <translation>This will store credentials unencrypted on disk using QSettings.\nOn Linux, it is recommended to install and use libsecret/Secret Service for better security.\n\nDo you still want to enable the insecure fallback?</translation>
     </message>
   </context>
 </TS>

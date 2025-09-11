@@ -12,6 +12,7 @@
 #include <QSize>
 #include <QFileDialog>
 #include <QStatusBar>
+#include <QLabel>
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QFileInfo>
@@ -58,12 +59,26 @@
 #include <QShortcut>
 #include <QToolButton>
 #include <QProcess>
+#include <cstring>
 #include <atomic>
 #include <thread>
 #include <chrono>
 #include <memory>
 
 static constexpr int NAME_COL = 0;
+
+// Best-effort memory scrubbing helpers for sensitive data
+static inline void secureClear(QString& s) {
+    for (int i = 0, n = s.size(); i < n; ++i) s[i] = QChar(u'\0');
+    s.clear();
+}
+static inline void secureClear(QByteArray& b) {
+    if (b.isEmpty()) return;
+    volatile char* p = reinterpret_cast<volatile char*>(b.data());
+    for (int i = 0; i < b.size(); ++i) p[i] = 0;
+    b.clear();
+    b.squeeze();
+}
 
 MainWindow::~MainWindow() = default; // define the destructor here
 
@@ -537,7 +552,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     appMenu_  = menuBar()->addMenu(tr("OpenSCP"));
     actAbout_ = appMenu_->addAction(tr("Acerca de OpenSCP"), this, &MainWindow::showAboutDialog);
     actAbout_->setMenuRole(QAction::AboutRole);
-    actPrefs_ = appMenu_->addAction(tr("Configuración…"), this, &MainWindow::showSettingsDialog);
+    actPrefs_ = appMenu_->addAction(tr("Ajustes…"), this, &MainWindow::showSettingsDialog);
     actPrefs_->setMenuRole(QAction::PreferencesRole);
     // Standard cross‑platform shortcut (Cmd+, on macOS; Ctrl+, on Linux/Windows)
     actPrefs_->setShortcut(QKeySequence::Preferences);
@@ -626,7 +641,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     // Warn if insecure storage is active (non‑Apple only when explicitly enabled)
     if (SecretStore::insecureFallbackActive()) {
-        statusBar()->showMessage(tr("Advertencia: almacenamiento de secretos sin cifrar activado (fallback)"), 8000);
+        auto* warn = new QLabel(tr("Advertencia: almacenamiento de secretos sin cifrar activado (fallback)"), this);
+        warn->setStyleSheet("QLabel{ color:#b00020; font-weight:bold; padding:2px 6px; }");
+        warn->setToolTip(tr("Estás usando un almacenamiento de credenciales sin cifrar activado por variable de entorno. Desactiva OPEN_SCP_ENABLE_INSECURE_FALLBACK para ocultar este aviso."));
+        statusBar()->addPermanentWidget(warn, 0);
     }
 
     // Apply user preferences (hidden files, click mode, etc.)
@@ -1860,21 +1878,30 @@ void MainWindow::deleteRightSelected() {
         QString lastErr;
         const QString base = rightRemoteModel_->rootPath();
         std::function<bool(const QString&)> delRec = [&](const QString& p) {
-            std::vector<openscp::FileInfo> out;
-            std::string lerr;
-            if (!sftp_->list(p.toStdString(), out, lerr)) {
+            // Determine if path is a directory or a file using stat/exists
+            bool isDir = false;
+            std::string xerr;
+            if (!sftp_->exists(p.toStdString(), isDir, xerr)) {
+                // If it doesn't exist, treat as success
+                if (xerr.empty()) return true;
+                lastErr = QString::fromStdString(xerr);
+                return false;
+            }
+            if (!isDir) {
                 std::string ferr;
                 if (!sftp_->removeFile(p.toStdString(), ferr)) { lastErr = QString::fromStdString(ferr); return false; }
                 return true;
             }
+            // Directory: list and remove children first (depth-first)
+            std::vector<openscp::FileInfo> out;
+            std::string lerr;
+            if (!sftp_->list(p.toStdString(), out, lerr)) {
+                lastErr = QString::fromStdString(lerr);
+                return false;
+            }
             for (const auto& e : out) {
                 const QString child = joinRemotePath(p, QString::fromStdString(e.name));
-                if (e.is_dir) {
-                    if (!delRec(child)) return false;
-                } else {
-                    std::string ferr;
-                    if (!sftp_->removeFile(child.toStdString(), ferr)) { lastErr = QString::fromStdString(ferr); return false; }
-                }
+                if (!delRec(child)) return false;
             }
             std::string derr;
             if (!sftp_->removeDir(p.toStdString(), derr)) { lastErr = QString::fromStdString(derr); return false; }
@@ -2319,7 +2346,12 @@ bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& er
                                                 QLineEdit::Password, QString(), &ok);
                 }, Qt::BlockingQueuedConnection);
                 if (!ok) return false;
-                responses.emplace_back(ans.toUtf8().toStdString());
+                {
+                    QByteArray bytes = ans.toUtf8();
+                    responses.emplace_back(bytes.constData(), (size_t)bytes.size());
+                    secureClear(bytes);
+                }
+                secureClear(ans);
                 continue;
             }
             // OTP / Verification code / Token
@@ -2332,7 +2364,12 @@ bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& er
                     ans = QInputDialog::getText(this, title, qprompt, QLineEdit::Password, QString(), &ok);
                 }, Qt::BlockingQueuedConnection);
                 if (!ok) return false;
-                responses.emplace_back(ans.toUtf8().toStdString());
+                {
+                    QByteArray bytes = ans.toUtf8();
+                    responses.emplace_back(bytes.constData(), (size_t)bytes.size());
+                    secureClear(bytes);
+                }
+                secureClear(ans);
                 continue;
             }
             // Generic case: ask for text (not hidden)
@@ -2344,7 +2381,12 @@ bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& er
                 ans = QInputDialog::getText(this, title, qprompt, QLineEdit::Normal, QString(), &ok);
             }, Qt::BlockingQueuedConnection);
             if (!ok) return false;
-            responses.emplace_back(ans.toUtf8().toStdString());
+            {
+                QByteArray bytes = ans.toUtf8();
+                responses.emplace_back(bytes.constData(), (size_t)bytes.size());
+                secureClear(bytes);
+            }
+            secureClear(ans);
         }
         return responses.size() == prompts.size();
     };
