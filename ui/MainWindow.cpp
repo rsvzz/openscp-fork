@@ -32,6 +32,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QDateTime>
+#include <QCheckBox>
 #include "PermissionsDialog.hpp"
 #include "SiteManagerDialog.hpp"
 #include <QMimeData>
@@ -680,22 +681,19 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     applyPreferences();
     updateDeleteShortcutEnables();
 
-    // Show Site Manager at startup if the preference is enabled
+    // Startup preferences and migration
     {
         QSettings s("OpenSCP", "OpenSCP");
-        const bool showConn = s.value("UI/showConnOnStart", true).toBool();
-        if (showConn) {
-            QTimer::singleShot(0, this, [this]{
-                SiteManagerDialog dlg(this);
-                if (dlg.exec() == QDialog::Accepted) {
-                    openscp::SessionOptions opt{};
-                    if (dlg.selectedOptions(opt)) {
-                        std::string err;
-                        if (!establishSftpAsync(opt, err)) { QMessageBox::critical(this, tr("Error de conexión"), QString::fromStdString(err)); return; }
-                        applyRemoteConnectedUI(opt);
-                    }
-                }
-            });
+        // One-shot migration: if only showConnOnStart exists, copy to openSiteManagerOnDisconnect
+        if (!s.contains("UI/openSiteManagerOnDisconnect") && s.contains("UI/showConnOnStart")) {
+            const bool v = s.value("UI/showConnOnStart", true).toBool();
+            s.setValue("UI/openSiteManagerOnDisconnect", v);
+            s.sync();
+        }
+        m_openSiteManagerOnStartup    = s.value("UI/showConnOnStart", true).toBool();
+        m_openSiteManagerOnDisconnect = s.value("UI/openSiteManagerOnDisconnect", true).toBool();
+        if (m_openSiteManagerOnStartup && !QCoreApplication::closingDown() && !sftp_) {
+            QTimer::singleShot(0, this, [this]{ showSiteManagerNonModal(); });
         }
     }
 }
@@ -1101,6 +1099,12 @@ void MainWindow::connectSftp() {
     if (dlg.exec() != QDialog::Accepted) return;
     std::string err;
     auto opt = dlg.options();
+    // Apply global security preferences also for ad‑hoc connections (Advanced settings)
+    {
+        QSettings s("OpenSCP", "OpenSCP");
+        opt.known_hosts_hash_names = s.value("Security/knownHostsHashed", true).toBool();
+        opt.show_fp_hex = s.value("Security/fpHex", false).toBool();
+    }
     if (!establishSftpAsync(opt, err)) {
         QMessageBox::critical(this, tr("Error de conexión"), QString::fromStdString(err));
         return;
@@ -1110,6 +1114,8 @@ void MainWindow::connectSftp() {
 
 // Tear down the current SFTP session and restore local mode.
 void MainWindow::disconnectSftp() {
+    if (m_isDisconnecting) return;
+    m_isDisconnecting = true;
     // Detach client from the queue to avoid dangling pointers
     if (transferMgr_) transferMgr_->clearClient();
     if (sftp_) sftp_->disconnect();
@@ -1136,26 +1142,75 @@ void MainWindow::disconnectSftp() {
     if (actMoveRight_)     actMoveRight_->setEnabled(true);
     if (actMoveRightTb_)   actMoveRightTb_->setEnabled(true);
     if (actCopyRightTb_)   actCopyRightTb_->setEnabled(true);
-    if (actChooseRight_)   actChooseRight_->setIcon(QIcon(QLatin1String(":/icons/using/action-open-folder.svg")));
+    if (actChooseRight_) {
+        actChooseRight_->setIcon(QIcon(QLatin1String(":/icons/using/action-open-folder.svg")));
+        actChooseRight_->setEnabled(true);
+        actChooseRight_->setToolTip(actChooseRight_->text());
+    }
     statusBar()->showMessage(tr("Desconectado"), 3000);
     setWindowTitle(tr("OpenSCP (demo) — local/local"));
     updateDeleteShortcutEnables();
 
-    // Show Site Manager on disconnect if the preference is enabled
-    {
-        QSettings s("OpenSCP", "OpenSCP");
-        const bool showConn = s.value("UI/showConnOnStart", true).toBool();
-        if (showConn) {
-            SiteManagerDialog dlg(this);
-            if (dlg.exec() == QDialog::Accepted) {
-                openscp::SessionOptions opt{};
-                if (dlg.selectedOptions(opt)) {
-                    std::string err;
-                    if (!establishSftpAsync(opt, err)) { QMessageBox::critical(this, tr("Error de conexión"), QString::fromStdString(err)); return; }
+    // Per spec: non‑modal Site Manager after disconnect (if enabled), without blocking UI
+    m_isDisconnecting = false;
+    if (!QCoreApplication::closingDown() && m_openSiteManagerOnDisconnect) {
+        QTimer::singleShot(0, this, [this]{ showSiteManagerNonModal(); });
+    }
+}
+
+void MainWindow::setOpenSiteManagerOnDisconnect(bool on) {
+    if (m_openSiteManagerOnDisconnect == on) return;
+    m_openSiteManagerOnDisconnect = on;
+    QSettings s("OpenSCP", "OpenSCP");
+    s.setValue("UI/openSiteManagerOnDisconnect", on);
+    s.sync();
+}
+
+void MainWindow::showSiteManagerNonModal() {
+    if (QApplication::activeModalWidget()) {
+        m_pendingOpenSiteManager = true;
+        QObject* modal = QApplication::activeModalWidget();
+        if (modal) connect(modal, &QObject::destroyed, this, &MainWindow::maybeOpenSiteManagerAfterModal, Qt::UniqueConnection);
+        return; // don't open underneath a modal
+    }
+    if (m_siteManager) {
+        m_siteManager->show();
+        m_siteManager->raise();
+        m_siteManager->activateWindow();
+        return;
+    }
+    auto* dlg = new SiteManagerDialog(this);
+    m_siteManager = dlg;
+    dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+    connect(dlg, &QObject::destroyed, this, [this]{ m_siteManager.clear(); });
+    connect(dlg, &QDialog::finished, this, [this, dlg](int res){
+        if (res == QDialog::Accepted && dlg) {
+            openscp::SessionOptions opt{};
+            if (dlg->selectedOptions(opt)) {
+                std::string err;
+                if (!establishSftpAsync(opt, err)) {
+                    QMessageBox::critical(this, tr("Error de conexión"), QString::fromStdString(err));
+                } else {
                     applyRemoteConnectedUI(opt);
                 }
             }
         }
+    });
+    QTimer::singleShot(0, dlg, [dlg]{ dlg->show(); dlg->raise(); dlg->activateWindow(); });
+}
+
+void MainWindow::setOpenSiteManagerOnStartup(bool on) {
+    if (m_openSiteManagerOnStartup == on) return;
+    m_openSiteManagerOnStartup = on;
+    QSettings s("OpenSCP", "OpenSCP");
+    s.setValue("UI/showConnOnStart", on);
+    s.sync();
+}
+
+void MainWindow::maybeOpenSiteManagerAfterModal() {
+    if (!QApplication::activeModalWidget() && m_pendingOpenSiteManager) {
+        m_pendingOpenSiteManager = false;
+        QTimer::singleShot(0, this, [this]{ showSiteManagerNonModal(); });
     }
 }
 
@@ -1640,14 +1695,14 @@ void MainWindow::moveRightToLeft() {
                 if (t.type != TransferTask::Type::Download) continue;
                 if (t.status != TransferTask::Status::Done) continue;
                 const QString r = t.src;
-                if (!state->filesPending.contains(r)) continue; // no pertenece a este movimiento o ya borrado
+                if (!state->filesPending.contains(r)) continue; // does not belong to this move or already deleted
                 if (state->filesProcessed.contains(r)) continue;
                 // Try to delete the remote file
                 std::string ferr; bool okDel = sftp_ && sftp_->removeFile(r.toStdString(), ferr);
                 state->filesProcessed.insert(r);
                 if (okDel) {
                     state->filesPending.remove(r);
-                    // Decrementar contador del top dir al que pertenece
+                    // Decrement counter for the top directory it belongs to
                     const QString topDir = state->fileToTopDir.value(r);
                     if (!topDir.isEmpty()) {
                         int rem = state->remainingInTopDir.value(topDir) - 1;
@@ -2114,42 +2169,166 @@ void MainWindow::changeRemotePermissions() {
 }
 
 // Ask the user to confirm an unknown host key (TOFU).
-bool MainWindow::confirmHostKeyUI(const QString& host, quint16 port, const QString& algorithm, const QString& fingerprint) {
-    QMessageBox box(this);
-    box.setIcon(QMessageBox::Question);
-    box.setWindowTitle(tr("Confirmar huella SSH"));
-    box.setText(QString(tr("Conectar a %1:%2\nAlgoritmo: %3\nHuella: %4\n\n¿Confiar y guardar en known_hosts?"))
-                    .arg(host)
-                    .arg(port)
-                    .arg(algorithm, fingerprint));
-    QPushButton* btYes = box.addButton(tr("Confiar"), QMessageBox::AcceptRole);
-    QPushButton* btNo  = box.addButton(tr("Cancelar"), QMessageBox::RejectRole);
-    box.exec();
-    return box.clickedButton() == btYes;
+bool MainWindow::confirmHostKeyUI(const QString& host,
+                                  quint16 port,
+                                  const QString& algorithm,
+                                  const QString& fingerprint,
+                                  bool canSave) {
+    m_tofuHost_ = host + ":" + QString::number(port);
+    m_tofuAlg_  = algorithm;
+    m_tofuFp_   = fingerprint;
+    m_tofuCanSave_ = canSave;
+    {
+        std::unique_lock<std::mutex> lk(m_tofuMutex_);
+        m_tofuDecided_ = false;
+        m_tofuAccepted_ = false;
+    }
+    QMetaObject::invokeMethod(this, [this, host, algorithm, fingerprint]{
+        showTOfuDialog(host, algorithm, fingerprint);
+    }, Qt::QueuedConnection);
+    std::unique_lock<std::mutex> lk(m_tofuMutex_);
+    m_tofuCv_.wait(lk, [&]{ return m_tofuDecided_; });
+    return m_tofuAccepted_;
+}
+
+// Explicit non‑modal TOFU dialog per spec: open() + finished -> onTofuFinished
+void MainWindow::showTOfuDialog(const QString& host, const QString& alg, const QString& fp) {
+    if (m_tofuBox) { m_tofuBox->raise(); m_tofuBox->activateWindow(); return; }
+    // If a connection progress dialog is visible, disable it so it does not capture input
+    if (m_connectProgress_ && m_connectProgress_->isVisible()) {
+        m_connectProgress_->setEnabled(false);
+        m_connectProgressDimmed_ = true;
+        std::fprintf(stderr, "[OpenSCP] TOFU shown; progress paused=true\n");
+    } else {
+        std::fprintf(stderr, "[OpenSCP] TOFU shown; progress paused=false\n");
+    }
+    auto* box = new QMessageBox(this);
+    m_tofuBox = box;
+    box->setAttribute(Qt::WA_DeleteOnClose, true);
+    box->setWindowModality(Qt::WindowModal);
+    box->setIcon(QMessageBox::Question);
+    box->setWindowTitle(tr("Confirmar huella SSH"));
+    QString text = QString(tr("Conectar a %1\nAlgoritmo: %2\nHuella: %3\n\n¿Confiar y guardar en known_hosts?"))
+                      .arg(host)
+                      .arg(alg)
+                      .arg(fp);
+    if (!m_tofuCanSave_) {
+        text = QString(tr("Conectar a %1\nAlgoritmo: %2\nHuella: %3\n\nNo se podrá guardar la huella. Conexión sólo por esta vez."))
+                   .arg(host)
+                   .arg(alg)
+                   .arg(fp);
+    }
+    box->setText(text);
+    box->addButton(m_tofuCanSave_ ? tr("Confiar") : tr("Conectar sin guardar"), QMessageBox::YesRole);
+    box->addButton(tr("Cancelar"), QMessageBox::RejectRole);
+    connect(box, &QMessageBox::finished, this, &MainWindow::onTofuFinished);
+    QTimer::singleShot(0, box, [this, box]{
+        box->open();
+        box->raise();
+        box->activateWindow();
+        box->setFocus(Qt::ActiveWindowFocusReason);
+    });
+}
+
+void MainWindow::onTofuFinished(int r) {
+    bool accept = (r == QDialog::Accepted || r == QMessageBox::Yes);
+    if (m_tofuBox) {
+        const auto* clicked = m_tofuBox->clickedButton();
+        if (clicked) {
+            auto role = m_tofuBox->buttonRole((QAbstractButton*)clicked);
+            accept = (role == QMessageBox::YesRole || role == QMessageBox::AcceptRole);
+        }
+        m_tofuBox->deleteLater();
+        m_tofuBox.clear();
+    }
+    if (!m_tofuCanSave_ && accept) {
+        statusBar()->showMessage(tr("No se pudo guardar la huella, conexión permitida solo esta vez"), 5000);
+    } else if (!accept) {
+        statusBar()->showMessage(tr("Conexión cancelada: huella no aceptada"), 5000);
+    }
+    // Re-enable progress if it was dimmed
+    if (m_connectProgressDimmed_ && m_connectProgress_) {
+        m_connectProgress_->setEnabled(true);
+        m_connectProgressDimmed_ = false;
+        std::fprintf(stderr, "[OpenSCP] TOFU closed; progress resumed=true\n");
+    } else {
+        std::fprintf(stderr, "[OpenSCP] TOFU closed; progress resumed=false\n");
+    }
+    {
+        std::unique_lock<std::mutex> lk(m_tofuMutex_);
+        m_tofuAccepted_ = accept;
+        m_tofuDecided_ = true;
+    }
+    m_tofuCv_.notify_one();
+}
+
+// Secondary non‑modal dialog for one‑time connection without saving
+void MainWindow::showOneTimeDialog(const QString& host, const QString& alg, const QString& fp) {
+    if (m_tofuBox) { m_tofuBox->raise(); m_tofuBox->activateWindow(); return; }
+    auto* box = new QMessageBox(this);
+    m_tofuBox = box;
+    box->setAttribute(Qt::WA_DeleteOnClose, true);
+    box->setWindowModality(Qt::WindowModal);
+    box->setIcon(QMessageBox::Warning);
+    box->setWindowTitle(tr("Confirmación adicional"));
+    box->setText(QString(tr("No se pudo guardar la huella. ¿Conectar solo esta vez sin guardar?\n\nHost: %1\nAlgoritmo: %2\nHuella: %3"))
+                    .arg(host, alg, fp));
+    box->addButton(tr("Conectar sin guardar"), QMessageBox::YesRole);
+    box->addButton(tr("Cancelar"), QMessageBox::RejectRole);
+    connect(box, &QMessageBox::finished, this, &MainWindow::onOneTimeFinished);
+    QTimer::singleShot(0, box, [box]{ box->open(); });
+}
+
+void MainWindow::onOneTimeFinished(int r) {
+    bool accept = (r == QDialog::Accepted || r == QMessageBox::Yes);
+    if (m_tofuBox) {
+        const auto* clicked = m_tofuBox->clickedButton();
+        if (clicked) {
+            auto role = m_tofuBox->buttonRole((QAbstractButton*)clicked);
+            accept = (role == QMessageBox::YesRole || role == QMessageBox::AcceptRole);
+        }
+        m_tofuBox->deleteLater();
+        m_tofuBox.clear();
+    }
+    if (accept) statusBar()->showMessage(tr("Conexión sin guardar confirmada por el usuario"), 5000);
+    else statusBar()->showMessage(tr("Conexión cancelada tras fallo de guardado"), 5000);
+    {
+        std::unique_lock<std::mutex> lk(m_tofuMutex_);
+        m_tofuAccepted_ = accept;
+        m_tofuDecided_ = true;
+    }
+    m_tofuCv_.notify_one();
 }
 
 // Intercept drag-and-drop and global events for panes and dialogs.
 bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
-    // Centrar QDialog/QMessageBox al mostrarse respecto a la ventana principal
+    // Center QDialog/QMessageBox on show relative to the main window
     if (ev->type() == QEvent::Show) {
         if (auto* dlg = qobject_cast<QDialog*>(obj)) {
+            // Avoid interfering with native-backed dialogs on macOS (QMessageBox/NSAlert, QProgressDialog, QInputDialog),
+            // which can crash if sized/moved during Show handling.
+            if (qobject_cast<QMessageBox*>(dlg) || qobject_cast<QProgressDialog*>(dlg) || qobject_cast<QInputDialog*>(dlg)) {
+                // Let Qt/macOS handle their own placement
+            } else {
     // Only center dialogs that belong (directly or indirectly) to this window
-            QWidget* p = dlg->parentWidget();
-            bool belongsToThis = false;
-            while (p) {
-                if (p == this) { belongsToThis = true; break; }
-                p = p->parentWidget();
-            }
-            if (belongsToThis) {
-                dlg->adjustSize();
-                QRect base = this->geometry();
-                if (!base.isValid()) {
-                    if (this->screen()) base = this->screen()->availableGeometry();
-                    else if (auto ps = QGuiApplication::primaryScreen()) base = ps->availableGeometry();
+                QWidget* p = dlg->parentWidget();
+                bool belongsToThis = false;
+                while (p) {
+                    if (p == this) { belongsToThis = true; break; }
+                    p = p->parentWidget();
                 }
-                if (base.isValid()) {
-                    const QRect aligned = QStyle::alignedRect(Qt::LeftToRight, Qt::AlignCenter, dlg->size(), base);
-                    dlg->move(aligned.topLeft());
+                if (belongsToThis) {
+                    // Expand to sizeHint without shrinking an explicit size
+                    dlg->resize(dlg->size().expandedTo(dlg->sizeHint()));
+                    QRect base = this->geometry();
+                    if (!base.isValid()) {
+                        if (this->screen()) base = this->screen()->availableGeometry();
+                        else if (auto ps = QGuiApplication::primaryScreen()) base = ps->availableGeometry();
+                    }
+                    if (base.isValid()) {
+                        const QRect aligned = QStyle::alignedRect(Qt::LeftToRight, Qt::AlignCenter, dlg->size(), base);
+                        dlg->move(aligned.topLeft());
+                    }
                 }
             }
         }
@@ -2337,12 +2516,14 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev) {
 // Establish an SFTP connection asynchronously and wire UI callbacks.
 bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& err) {
     // Inject host key confirmation (TOFU) via UI
-    opt.hostkey_confirm_cb = [this](const std::string& h, std::uint16_t p, const std::string& alg, const std::string& fp) {
-        bool accepted = false;
-        QMetaObject::invokeMethod(this, [&, h, p, alg, fp] {
-            accepted = confirmHostKeyUI(QString::fromStdString(h), (quint16)p, QString::fromStdString(alg), QString::fromStdString(fp));
-        }, Qt::BlockingQueuedConnection);
-        return accepted;
+    opt.hostkey_confirm_cb = [this](const std::string& h, std::uint16_t p, const std::string& alg, const std::string& fp, bool canSave) {
+        return confirmHostKeyUI(QString::fromStdString(h), (quint16)p,
+                                QString::fromStdString(alg), QString::fromStdString(fp),
+                                canSave);
+    };
+    opt.hostkey_status_cb = [this](const std::string& msg){
+        const QString q = QString::fromStdString(msg);
+        QMetaObject::invokeMethod(this, [this, q]{ statusBar()->showMessage(q, 5000); }, Qt::QueuedConnection);
     };
 
     // Keyboard-interactive callback (OTP/2FA). Prefer auto-filling password/username; request OTP if needed.
@@ -2421,23 +2602,39 @@ bool MainWindow::establishSftpAsync(openscp::SessionOptions opt, std::string& er
     };
 
     QProgressDialog progress(tr("Conectando…"), QString(), 0, 0, this);
-    progress.setWindowModality(Qt::ApplicationModal);
+    // Make progress non-modal to avoid blocking TOFU confirmation
+    progress.setWindowModality(Qt::NonModal);
     progress.setCancelButton(nullptr);
+    progress.setMinimumDuration(0);
+    progress.setAutoClose(false);
+    progress.setAutoReset(false);
     progress.show();
+    progress.raise();
+    m_connectProgress_ = &progress;
+    m_connectProgressDimmed_ = false;
 
     std::atomic<bool> done{ false };
     bool okConn = false;
     std::thread th([&] {
-        auto tmp = std::make_unique<openscp::Libssh2SftpClient>();
-        okConn = tmp->connect(opt, err);
-        if (okConn) {
-            QMetaObject::invokeMethod(this, [this, t = tmp.release()] { sftp_.reset(t); }, Qt::BlockingQueuedConnection);
+        try {
+            auto tmp = std::make_unique<openscp::Libssh2SftpClient>();
+            okConn = tmp->connect(opt, err);
+            if (okConn) {
+                QMetaObject::invokeMethod(this, [this, t = tmp.release()] { sftp_.reset(t); }, Qt::BlockingQueuedConnection);
+            }
+        } catch (const std::exception& ex) {
+            err = std::string("Excepción en conexión: ") + ex.what();
+            okConn = false;
+        } catch (...) {
+            err = "Excepción desconocida en conexión";
+            okConn = false;
         }
         done = true;
     });
     while (!done) { qApp->processEvents(QEventLoop::AllEvents, 50); std::this_thread::sleep_for(std::chrono::milliseconds(50)); }
     th.join();
     progress.close();
+    m_connectProgress_.clear();
     return okConn;
 }
 
@@ -2476,7 +2673,13 @@ void MainWindow::applyRemoteConnectedUI(const openscp::SessionOptions& opt) {
     if (actNewFileRight_) actNewFileRight_->setEnabled(true);
     if (actRenameRight_)  actRenameRight_->setEnabled(true);
     if (actDeleteRight_)  actDeleteRight_->setEnabled(true);
-    if (actChooseRight_)   actChooseRight_->setIcon(QIcon(QLatin1String(":/icons/using/action-open-folder-remote.svg")));
+    if (actChooseRight_) {
+        actChooseRight_->setIcon(QIcon(QLatin1String(":/icons/using/action-open-folder-remote.svg")));
+        // Opening the system file explorer on a remote host is not supported cross‑platform.
+        // Disable this action in remote mode to avoid confusion.
+        actChooseRight_->setEnabled(false);
+        actChooseRight_->setToolTip(tr("No disponible en remoto"));
+    }
     statusBar()->showMessage(tr("Conectado (SFTP) a ") + QString::fromStdString(opt.host), 4000);
     setWindowTitle(tr("OpenSCP (demo) — local/remoto (SFTP)"));
     updateRemoteWriteability();
@@ -2489,6 +2692,8 @@ void MainWindow::applyPreferences() {
     const bool showHidden = s.value("UI/showHidden", false).toBool();
     const bool singleClick = s.value("UI/singleClick", false).toBool();
     prefOpenRevealInFolder_ = s.value("UI/openRevealInFolder", false).toBool();
+    // Keep Site Manager auto-open preference up to date
+    m_openSiteManagerOnDisconnect = s.value("UI/openSiteManagerOnDisconnect", true).toBool();
 
     // Local: model filters (hidden on/off)
     auto applyLocalFilters = [&](QFileSystemModel* m) {

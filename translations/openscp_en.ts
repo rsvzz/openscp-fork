@@ -528,6 +528,42 @@ Continue?</translation>
       <translation>Confirm SSH fingerprint</translation>
     </message>
     <message>
+      <source>Conectar a %1\nAlgoritmo: %2\nHuella: %3\n\n¿Confiar y guardar en known_hosts?</source>
+      <translation>Connect to %1\nAlgorithm: %2\nFingerprint: %3\n\nTrust and save in known_hosts?</translation>
+    </message>
+    <message>
+      <source>No se podrá guardar la huella. Conexión sólo por esta vez.</source>
+      <translation>Fingerprint cannot be saved. One-time connection only.</translation>
+    </message>
+    <message>
+      <source>No se pudo guardar la huella, conexión permitida solo esta vez</source>
+      <translation>Could not save fingerprint; allowing one-time connection</translation>
+    </message>
+    <message>
+      <source>Conexión cancelada: huella no aceptada</source>
+      <translation>Connection cancelled: fingerprint not accepted</translation>
+    </message>
+    <message>
+      <source>Confirmación adicional</source>
+      <translation>Additional confirmation</translation>
+    </message>
+    <message>
+      <source>No se pudo guardar la huella. ¿Conectar solo esta vez sin guardar?\n\nHost: %1\nAlgoritmo: %2\nHuella: %3</source>
+      <translation>Could not save fingerprint. Connect only once without saving?\n\nHost: %1\nAlgorithm: %2\nFingerprint: %3</translation>
+    </message>
+    <message>
+      <source>Conectar sin guardar</source>
+      <translation>Connect without saving</translation>
+    </message>
+    <message>
+      <source>Conexión sin guardar confirmada por el usuario</source>
+      <translation>One-time connection without saving confirmed by user</translation>
+    </message>
+    <message>
+      <source>Conexión cancelada tras fallo de guardado</source>
+      <translation>Connection cancelled after save failure</translation>
+    </message>
+    <message>
       <source>Conectar a %1:%2
 Algoritmo: %3
 Huella: %4
@@ -761,6 +797,10 @@ Continue?</translation>
       <translation>Open right folder</translation>
     </message>
     <message>
+      <source>No disponible en remoto</source>
+      <translation>Not available in remote mode</translation>
+    </message>
+    <message>
       <source>Conectar (SFTP)</source>
       <translation>Connect (SFTP)</translation>
     </message>
@@ -904,6 +944,14 @@ Overwrite?</translation>
     <message>
       <source>Mostrar ventana de conexión al inicio y cuando se cierre la última sesión.</source>
       <translation>Show connection window on startup and when the last session closes.</translation>
+    </message>
+    <message>
+      <source>Abrir Gestor de Sitios al iniciar</source>
+      <translation>Open Site Manager on startup</translation>
+    </message>
+    <message>
+      <source>Abrir Gestor de Sitios al desconectar</source>
+      <translation>Open Site Manager on disconnect</translation>
     </message>
     <message>
       <source>Abrir archivos mostrando su carpeta en el sistema (recomendado).</source>

@@ -54,10 +54,15 @@ struct SessionOptions {
 
     // Host key confirmation (TOFU) when known_hosts lacks an entry.
     // Return true to accept and save, false to reject.
+    // canSave: whether the client will be able to persist the host key (false means user must explicitly allow a one‑time connection without saving)
     std::function<bool(const std::string& host,
                        std::uint16_t port,
                        const std::string& algorithm,
-                       const std::string& fingerprint)> hostkey_confirm_cb;
+                       const std::string& fingerprint,
+                       bool canSave)> hostkey_confirm_cb;
+
+    // Optional: backend status messages (e.g., persist errors/reasons)
+    std::function<void(const std::string& message)> hostkey_status_cb;
 
     // Custom handling for keyboard-interactive (e.g., OTP/2FA). Optional.
     KbdIntPromptsCB keyboard_interactive_cb;

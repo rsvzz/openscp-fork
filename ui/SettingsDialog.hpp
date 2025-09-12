@@ -19,7 +19,8 @@ private:
     QComboBox* langCombo_  = nullptr;   // es/en
     QCheckBox* showHidden_ = nullptr;   // show hidden files
     QComboBox* clickMode_  = nullptr;   // single click vs double click
-    QCheckBox* showConnOnStart_ = nullptr; // show site manager at startup and when closing last session
+    QCheckBox* showConnOnStart_ = nullptr; // open Site Manager at startup
+    QCheckBox* showConnOnDisconnect_ = nullptr; // open Site Manager on disconnect
     QCheckBox* openInFolder_ = nullptr; // open downloaded files by revealing in folder instead of opening directly
     QCheckBox* deleteSecretsOnRemove_ = nullptr; // when deleting a site, also delete its stored credentials (off by default)
 #if defined(Q_OS_MAC) || defined(Q_OS_MACOS) || defined(__APPLE__)

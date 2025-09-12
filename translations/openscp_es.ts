@@ -525,6 +525,42 @@
       <translation>Confirmar huella SSH</translation>
     </message>
     <message>
+      <source>Conectar a %1\nAlgoritmo: %2\nHuella: %3\n\n¿Confiar y guardar en known_hosts?</source>
+      <translation>Conectar a %1\nAlgoritmo: %2\nHuella: %3\n\n¿Confiar y guardar en known_hosts?</translation>
+    </message>
+    <message>
+      <source>No se podrá guardar la huella. Conexión sólo por esta vez.</source>
+      <translation>No se podrá guardar la huella. Conexión sólo por esta vez.</translation>
+    </message>
+    <message>
+      <source>No se pudo guardar la huella, conexión permitida solo esta vez</source>
+      <translation>No se pudo guardar la huella, conexión permitida solo esta vez</translation>
+    </message>
+    <message>
+      <source>Conexión cancelada: huella no aceptada</source>
+      <translation>Conexión cancelada: huella no aceptada</translation>
+    </message>
+    <message>
+      <source>Confirmación adicional</source>
+      <translation>Confirmación adicional</translation>
+    </message>
+    <message>
+      <source>No se pudo guardar la huella. ¿Conectar solo esta vez sin guardar?\n\nHost: %1\nAlgoritmo: %2\nHuella: %3</source>
+      <translation>No se pudo guardar la huella. ¿Conectar solo esta vez sin guardar?\n\nHost: %1\nAlgoritmo: %2\nHuella: %3</translation>
+    </message>
+    <message>
+      <source>Conectar sin guardar</source>
+      <translation>Conectar sin guardar</translation>
+    </message>
+    <message>
+      <source>Conexión sin guardar confirmada por el usuario</source>
+      <translation>Conexión sin guardar confirmada por el usuario</translation>
+    </message>
+    <message>
+      <source>Conexión cancelada tras fallo de guardado</source>
+      <translation>Conexión cancelada tras fallo de guardado</translation>
+    </message>
+    <message>
       <source>Conectar a %1:%2
 Algoritmo: %3
 Huella: %4
@@ -704,6 +740,10 @@ Huella: %4
       <translation>Abrir carpeta derecha</translation>
     </message>
     <message>
+      <source>No disponible en remoto</source>
+      <translation>No disponible en remoto</translation>
+    </message>
+    <message>
       <source>Conectar (SFTP)</source>
       <translation>Conectar (SFTP)</translation>
     </message>
@@ -855,6 +895,14 @@ Huella: %4
     <message>
       <source>Mostrar ventana de conexión al inicio y cuando se cierre la última sesión.</source>
       <translation>Mostrar ventana de conexión al inicio y cuando se cierre la última sesión.</translation>
+    </message>
+    <message>
+      <source>Abrir Gestor de Sitios al iniciar</source>
+      <translation>Abrir Gestor de Sitios al iniciar</translation>
+    </message>
+    <message>
+      <source>Abrir Gestor de Sitios al desconectar</source>
+      <translation>Abrir Gestor de Sitios al desconectar</translation>
     </message>
     <message>
       <source>Abrir archivos mostrando su carpeta en el sistema (recomendado).</source>

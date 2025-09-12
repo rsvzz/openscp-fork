@@ -15,20 +15,27 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
+#include <QToolTip>
+#include <QCursor>
 
 SiteManagerDialog::SiteManagerDialog(QWidget* parent) : QDialog(parent) {
     setWindowTitle(tr("Gestor de sitios"));
-    resize(820, 520); // a bit larger by default
+    resize(720, 480); // compact default; view will elide/scroll as needed
     auto* lay = new QVBoxLayout(this);
     table_ = new QTableWidget(this);
     table_->setColumnCount(3);
     table_->setHorizontalHeaderLabels({ tr("Nombre"), tr("Host"), tr("Usuario") });
     table_->verticalHeader()->setVisible(false);
-    // Prioritize showing the name: stretch first column; host/user sized to contents
-    table_->horizontalHeader()->setStretchLastSection(false);
+    // Column sizing: stretch to fill and adapt on resize
+    table_->horizontalHeader()->setStretchLastSection(true);
     table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    table_->horizontalHeader()->setMinimumSectionSize(80);
+    // Elide long text on the right to avoid oversized cells
+    table_->setTextElideMode(Qt::ElideRight);
+    table_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    table_->setWordWrap(false);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
     table_->setSortingEnabled(true);
@@ -55,6 +62,14 @@ SiteManagerDialog::SiteManagerDialog(QWidget* parent) : QDialog(parent) {
     // Initial state: disable Edit/Delete/Connect if there is no selection
     updateButtons();
     connect(table_->selectionModel(), &QItemSelectionModel::selectionChanged, this, &SiteManagerDialog::updateButtons);
+    // Double-click: show full cell content as a tooltip at cursor position
+    connect(table_, &QTableWidget::itemDoubleClicked, this, [this](QTableWidgetItem* it){
+        if (!it) return;
+        // Prefer full text stored in UserRole+1, then tooltip, then cell text
+        QVariant fullVar = it->data(Qt::UserRole + 1);
+        const QString full = fullVar.isValid() ? fullVar.toString() : (it->toolTip().isEmpty() ? it->text() : it->toolTip());
+        if (!full.isEmpty()) QToolTip::showText(QCursor::pos(), full, table_);
+    });
 }
 
 void SiteManagerDialog::loadSites() {
@@ -107,9 +122,19 @@ void SiteManagerDialog::refresh() {
     if (wasSorting) table_->setSortingEnabled(false);
     table_->setRowCount(sites_.size());
     for (int i = 0; i < sites_.size(); ++i) {
-        auto* itName = new QTableWidgetItem(sites_[i].name);
-        auto* itHost = new QTableWidgetItem(QString::fromStdString(sites_[i].opt.host));
-        auto* itUser = new QTableWidgetItem(QString::fromStdString(sites_[i].opt.username));
+        const QString fullName = sites_[i].name;
+        // Keep full text in the item; let view elide visually
+        auto* itName = new QTableWidgetItem(fullName);
+        itName->setToolTip(fullName);
+        itName->setData(Qt::UserRole + 1, fullName);
+        const QString fullHost = QString::fromStdString(sites_[i].opt.host);
+        auto* itHost = new QTableWidgetItem(fullHost);
+        itHost->setToolTip(fullHost);
+        itHost->setData(Qt::UserRole + 1, fullHost);
+        const QString fullUser = QString::fromStdString(sites_[i].opt.username);
+        auto* itUser = new QTableWidgetItem(fullUser);
+        itUser->setToolTip(fullUser);
+        itUser->setData(Qt::UserRole + 1, fullUser);
         // Store original index so selection works even when the view is sorted
         itName->setData(Qt::UserRole, i);
         itHost->setData(Qt::UserRole, i);
@@ -171,6 +196,18 @@ void SiteManagerDialog::onEdit() {
     sites_[modelIndex] = e;
     saveSites();
     refresh();
+    // Reselect and focus the edited site even if sorting changed the row
+    for (int r = 0; r < table_->rowCount(); ++r) {
+        if (auto* it = table_->item(r, 0)) {
+            if (it->data(Qt::UserRole).toInt() == modelIndex) {
+                table_->setCurrentCell(r, 0);
+                table_->selectRow(r);
+                table_->scrollToItem(it, QAbstractItemView::PositionAtCenter);
+                table_->setFocus(Qt::OtherFocusReason);
+                break;
+            }
+        }
+    }
     // Update secrets
     SecretStore store;
     if (e.opt.password) store.setSecret(QString("site:%1:password").arg(name), QString::fromStdString(*e.opt.password));

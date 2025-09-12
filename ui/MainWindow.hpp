@@ -6,6 +6,7 @@
 #include <QLineEdit>
 #include <QAction>
 #include <string>
+#include <QPointer>
 #include <memory>
 
 class RemoteModel;              // fwd
@@ -21,6 +22,12 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow();
+    // Preference: open Site Manager automatically on disconnect (non‑modal)
+    void setOpenSiteManagerOnDisconnect(bool on);
+    bool openSiteManagerOnDisconnect() const { return m_openSiteManagerOnDisconnect; }
+    // Preference: open Site Manager automatically on startup (non‑modal)
+    void setOpenSiteManagerOnStartup(bool on);
+    bool openSiteManagerOnStartup() const { return m_openSiteManagerOnStartup; }
 protected:
     bool eventFilter(QObject* obj, QEvent* ev) override;
     void showEvent(QShowEvent* e) override;
@@ -133,8 +140,20 @@ private:
     QString downloadDir_; // last local folder chosen for downloads
     QString uploadDir_;   // last local folder chosen for uploads
 
-    // Host key confirmation (TOFU)
-    bool confirmHostKeyUI(const QString& host, quint16 port, const QString& algorithm, const QString& fingerprint);
+    // Host key confirmation (TOFU) — non‑modal UI with sync wait (no exec())
+    bool confirmHostKeyUI(const QString& host,
+                          quint16 port,
+                          const QString& algorithm,
+                          const QString& fingerprint,
+                          bool canSave);
+
+    // Explicit non‑modal TOFU dialog API per spec
+    void showTOfuDialog(const QString& host, const QString& alg, const QString& fp);
+    void onTofuFinished(int r);
+    void showOneTimeDialog(const QString& host, const QString& alg, const QString& fp);
+    void onOneTimeFinished(int r);
+    void showSiteManagerNonModal();
+    void maybeOpenSiteManagerAfterModal();
 
     // Helpers for connecting and wiring up the remote UI
     bool establishSftpAsync(openscp::SessionOptions opt, std::string& err);
@@ -153,4 +172,24 @@ private:
     bool prefOpenRevealInFolder_ = false; // if true, reveal downloaded/opened files in folder instead of opening directly
     QMetaObject::Connection leftClickConn_;
     QMetaObject::Connection rightClickConn_;
+
+    // Reentrancy guards and dialog pointers
+    bool m_isDisconnecting = false;
+    QPointer<class QMessageBox> m_tofuBox;
+    QPointer<class QWidget> m_siteManager;
+    bool m_openSiteManagerOnDisconnect = true;
+    bool m_openSiteManagerOnStartup = true;
+    bool m_pendingOpenSiteManager = false;
+    // Connection progress dialog (non-modal), to avoid blocking TOFU
+    QPointer<class QProgressDialog> m_connectProgress_;
+    bool m_connectProgressDimmed_ = false;
+    // TOFU wait state
+    std::mutex m_tofuMutex_;
+    std::condition_variable m_tofuCv_;
+    bool m_tofuDecided_ = false;
+    bool m_tofuAccepted_ = false;
+    bool m_tofuCanSave_ = false;
+    QString m_tofuHost_;
+    QString m_tofuAlg_;
+    QString m_tofuFp_;
 };

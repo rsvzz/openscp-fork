@@ -50,11 +50,18 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
         root->addLayout(row);
     }
 
-    // Show connection window on startup / when the last session closes
+    // Site Manager auto-open preferences
     {
         auto* row = new QHBoxLayout();
-        showConnOnStart_ = new QCheckBox(tr("Mostrar ventana de conexión al inicio y cuando se cierre la última sesión."), this);
+        showConnOnStart_ = new QCheckBox(tr("Abrir Gestor de Sitios al iniciar"), this);
         row->addWidget(showConnOnStart_);
+        row->addStretch();
+        root->addLayout(row);
+    }
+    {
+        auto* row = new QHBoxLayout();
+        showConnOnDisconnect_ = new QCheckBox(tr("Abrir Gestor de Sitios al desconectar"), this);
+        row->addWidget(showConnOnDisconnect_);
         row->addStretch();
         root->addLayout(row);
     }
@@ -142,6 +149,8 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     showHidden_->setChecked(showHidden);
     const bool showConnOnStart = s.value("UI/showConnOnStart", true).toBool();
     if (showConnOnStart_) showConnOnStart_->setChecked(showConnOnStart);
+    const bool showConnOnDisc = s.value("UI/openSiteManagerOnDisconnect", true).toBool();
+    if (showConnOnDisconnect_) showConnOnDisconnect_->setChecked(showConnOnDisc);
     const bool singleClick = s.value("UI/singleClick", false).toBool();
     clickMode_->setCurrentIndex(singleClick ? 1 : 0);
     const bool openInFolder = s.value("UI/openRevealInFolder", false).toBool();
@@ -236,6 +245,7 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     connect(clickMode_, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateApplyFromControls);
     connect(showHidden_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
     connect(showConnOnStart_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
+    if (showConnOnDisconnect_) connect(showConnOnDisconnect_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
     if (openInFolder_) connect(openInFolder_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
     if (deleteSecretsOnRemove_) connect(deleteSecretsOnRemove_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
     if (knownHostsHashed_) connect(knownHostsHashed_, &QCheckBox::toggled, this, &SettingsDialog::updateApplyFromControls);
@@ -276,6 +286,7 @@ void SettingsDialog::onApply() {
     s.setValue("UI/language", chosenLang);
     s.setValue("UI/showHidden", showHidden_ && showHidden_->isChecked());
     s.setValue("UI/showConnOnStart", showConnOnStart_ && showConnOnStart_->isChecked());
+    if (showConnOnDisconnect_) s.setValue("UI/openSiteManagerOnDisconnect", showConnOnDisconnect_->isChecked());
     const bool singleClick = (clickMode_ && clickMode_->currentData().toInt() == 1);
     s.setValue("UI/singleClick", singleClick);
     if (openInFolder_) s.setValue("UI/openRevealInFolder", openInFolder_->isChecked());
@@ -303,6 +314,7 @@ void SettingsDialog::updateApplyFromControls() {
     const QString prevLang = s.value("UI/language", "es").toString();
     const bool showHidden = s.value("UI/showHidden", false).toBool();
     const bool showConnOnStart = s.value("UI/showConnOnStart", true).toBool();
+    const bool onDisc = s.value("UI/openSiteManagerOnDisconnect", true).toBool();
     const bool singleClick = s.value("UI/singleClick", false).toBool();
     const bool openInFolder = s.value("UI/openRevealInFolder", false).toBool();
     const bool deleteSecrets = s.value("Sites/deleteSecretsOnRemove", false).toBool();
@@ -318,6 +330,7 @@ void SettingsDialog::updateApplyFromControls() {
     const QString curLang = langCombo_ ? langCombo_->currentData().toString() : prevLang;
     const bool curShowHidden = showHidden_ && showHidden_->isChecked();
     const bool curShowConn = showConnOnStart_ && showConnOnStart_->isChecked();
+    const bool curShowConnDisc = showConnOnDisconnect_ && showConnOnDisconnect_->isChecked();
     const bool curSingleClick = (clickMode_ && clickMode_->currentData().toInt() == 1);
     const bool curOpenInFolder = openInFolder_ && openInFolder_->isChecked();
     const bool curDeleteSecrets = deleteSecretsOnRemove_ && deleteSecretsOnRemove_->isChecked();
@@ -332,7 +345,7 @@ void SettingsDialog::updateApplyFromControls() {
 
     const bool modified = (curLang != prevLang) ||
                           (curShowHidden != showHidden) ||
-                          (curShowConn != showConnOnStart) ||
+                          (curShowConn != showConnOnStart) || (curShowConnDisc != onDisc) ||
                           (curSingleClick != singleClick) ||
                           (curOpenInFolder != openInFolder) ||
                           (curDeleteSecrets != deleteSecrets) ||

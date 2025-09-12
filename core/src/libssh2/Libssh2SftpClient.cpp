@@ -14,12 +14,19 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <pwd.h>
+#include <sys/types.h>
+// OpenSSL for HMAC-SHA1 (hashed known_hosts names) and RNG
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
 #else
 #include <windows.h>
 #endif
 #include <cstdio>
 #include <sstream>
 #include <array>
+#include <ctime>
 
 // POSIX sockets
 #include <sys/types.h>
@@ -30,6 +37,49 @@
 #include <netinet/tcp.h>
 
 namespace openscp {
+
+// Resolve POSIX home directory robustly (prefer $HOME, fallback to getpwuid)
+#ifndef _WIN32
+static std::string resolve_posix_home() {
+    const char* home = std::getenv("HOME");
+    if (home && *home) return std::string(home);
+    struct passwd* pw = ::getpwuid(::getuid());
+    if (pw && pw->pw_dir && *pw->pw_dir) return std::string(pw->pw_dir);
+    return std::string();
+}
+#endif
+
+// Append host key audit log lines to ~/.openscp/openscp.auth (0600). Best-effort.
+static void auditLogHostKey(const std::string& host,
+                            uint16_t port,
+                            const std::string& algorithm,
+                            const std::string& fingerprint,
+                            const char* status) {
+#ifndef _WIN32
+    const char* home = std::getenv("HOME");
+    if (!home) return;
+    std::string dir = std::string(home) + "/.openscp";
+    struct ::stat st{};
+    if (::stat(dir.c_str(), &st) != 0) {
+        (void)::mkdir(dir.c_str(), 0700);
+    } else {
+        (void)::chmod(dir.c_str(), 0700);
+    }
+    std::string path = dir + "/openscp.auth";
+    int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0600);
+    if (fd < 0) return;
+    // Simple timestamp (epoch seconds) for now
+    char line[1024];
+    std::snprintf(line, sizeof(line),
+                  "ts=%ld host=%s port=%u alg=\"%s\" fp=\"%s\" status=%s\n",
+                  (long)time(nullptr), host.c_str(), (unsigned)port,
+                  algorithm.c_str(), fingerprint.c_str(), status ? status : "unknown");
+    (void)::write(fd, line, (unsigned)std::strlen(line));
+    ::close(fd);
+#else
+    (void)host; (void)port; (void)algorithm; (void)fingerprint; (void)status;
+#endif
+}
 
 // Simple Base64 encoder (standard, with '=' padding)
 static std::string b64encode(const unsigned char* data, std::size_t len) {
@@ -71,6 +121,24 @@ static bool useHashedKnownHosts() {
 
 // Global libssh2 initialization (once per process)
 static bool g_libssh2_inited = false;
+
+#ifndef _WIN32
+// Compute OpenSSH hashed hostname token: |1|base64(salt)|base64(HMAC_SHA1(salt, host))
+static std::string openssh_hash_hostname(const std::string& host) {
+    unsigned char salt[20];
+    if (RAND_bytes(salt, sizeof(salt)) != 1) {
+        // fallback: pseudo-random
+        for (size_t i = 0; i < sizeof(salt); ++i) salt[i] = (unsigned char)(rand() & 0xFF);
+    }
+    unsigned char mac[EVP_MAX_MD_SIZE]; unsigned int maclen = 0;
+    HMAC(EVP_sha1(), salt, (int)sizeof(salt),
+         reinterpret_cast<const unsigned char*>(host.data()), (int)host.size(),
+         mac, &maclen);
+    std::string s_salt = b64encode(salt, sizeof(salt));
+    std::string s_mac  = b64encode(mac, maclen);
+    return std::string("|1|") + s_salt + "|" + s_mac;
+}
+#endif
 
 // Context for keyboard-interactive: respond with username/password based on the prompt
 struct KbdIntCtx {
@@ -299,8 +367,10 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
         if (opt.known_hosts_path.has_value()) {
             khPath = *opt.known_hosts_path;
         } else {
-            const char* home = std::getenv("HOME");
-            if (home) khPath = std::string(home) + "/.ssh/known_hosts";
+#ifndef _WIN32
+            std::string home = resolve_posix_home();
+            if (!home.empty()) khPath = home + "/.ssh/known_hosts";
+#endif
         }
 
         bool khLoaded = false;
@@ -377,6 +447,7 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
 
         int typemask_plain = LIBSSH2_KNOWNHOST_TYPE_PLAIN | LIBSSH2_KNOWNHOST_KEYENC_RAW | alg;
         int typemask_hash = LIBSSH2_KNOWNHOST_TYPE_SHA1 | LIBSSH2_KNOWNHOST_KEYENC_RAW | alg;
+        std::fprintf(stderr, "[OpenSCP] HostKey map: keytype=%d algMask=%d display=%s\n", keytype, alg, algDisplay.c_str());
 
         struct libssh2_knownhost* host = nullptr;
         int check = libssh2_knownhost_checkp(nh, opt.host.c_str(), opt.port,
@@ -440,108 +511,173 @@ bool Libssh2SftpClient::sshHandshakeAuth(const SessionOptions& opt, std::string&
             }
 #endif
             // Bits (approx): length of raw hostkey bytes
-            int keyBits = (int)keylen * 8;
+            int keyBits = 0;
+            switch (keytype) {
+                case LIBSSH2_HOSTKEY_TYPE_ED25519: keyBits = 256; break;
+                case LIBSSH2_HOSTKEY_TYPE_ECDSA_256: keyBits = 256; break;
+                case LIBSSH2_HOSTKEY_TYPE_ECDSA_384: keyBits = 384; break;
+                case LIBSSH2_HOSTKEY_TYPE_ECDSA_521: keyBits = 521; break;
+                default: keyBits = (int)keylen * 8; break;
+            }
             std::ostringstream algWithBits;
             algWithBits << algDisplay << " (" << keyBits << "-bit)";
+
+            bool canSaveInitial = !khPath.empty() && ((alg != 0)
+#ifdef LIBSSH2_HOSTKEY_TYPE_ED25519
+                || (keytype == LIBSSH2_HOSTKEY_TYPE_ED25519)
+#endif
+            );
             bool confirmed = false;
             if (opt.hostkey_confirm_cb) {
-                confirmed = opt.hostkey_confirm_cb(opt.host, opt.port, algWithBits.str(), fpStr);
+                confirmed = opt.hostkey_confirm_cb(opt.host, opt.port, algWithBits.str(), fpStr, canSaveInitial);
             }
             if (!confirmed) {
                 libssh2_knownhost_free(nh);
+                auditLogHostKey(opt.host, opt.port, algWithBits.str(), fpStr, "rechazado");
                 err = "Host desconocido: huella no confirmada por el usuario";
                 return false;
             }
-            if (khPath.empty()) {
-                libssh2_knownhost_free(nh);
-                err = "Ruta known_hosts no definida";
-                return false;
-            }
-            bool preferHashed = opt.known_hosts_hash_names;
-            if (const char* ev = std::getenv("OPEN_SCP_KNOWNHOSTS_PLAIN")) {
-                if (*ev == '1') preferHashed = false; else if (*ev == '0') preferHashed = true;
-            }
-            int nameMask = preferHashed ? LIBSSH2_KNOWNHOST_TYPE_SHA1
-                                        : LIBSSH2_KNOWNHOST_TYPE_PLAIN;
-            int addMask = nameMask | LIBSSH2_KNOWNHOST_KEYENC_RAW | alg;
-            // When saving non-default ports, OpenSSH expects the host to be written as "[host]:port"
-            std::string hostForKnown = opt.host;
-            if (opt.port != 22) {
-                hostForKnown = std::string("[") + opt.host + "]:" + std::to_string(opt.port);
-            }
-            // Track whether the known_hosts file existed before writing (POSIX only)
-#ifndef _WIN32
-            bool khExistedBefore = (access(khPath.c_str(), F_OK) == 0);
-#endif
 
-            int addrc = libssh2_knownhost_addc(nh, hostForKnown.c_str(), nullptr,
-                                               hostkey, (size_t)keylen,
-                                               nullptr, 0, addMask, nullptr);
-            if (addrc != 0) {
+            // If saving is not possible (unsupported alg or no kh path): allow only if user explicitly accepted
+            if (!canSaveInitial) {
                 libssh2_knownhost_free(nh);
-                err = "No se pudo agregar host en known_hosts";
-                return false;
-            }
-
-            // Ensure parent dir exists with 0700
-#ifndef _WIN32
-            auto ensure_parent_dir_0700 = [](const std::string& path){
-                std::string dir = path;
-                std::size_t p = dir.find_last_of('/');
-                if (p != std::string::npos) dir.resize(p);
-                struct ::stat st{};
-                if (::stat(dir.c_str(), &st) != 0) {
-                    (void)::mkdir(dir.c_str(), 0700);
-                } else {
-                    // tighten perms best-effort
-                    (void)::chmod(dir.c_str(), 0700);
+                std::fprintf(stderr, "[OpenSCP] Saving hostkey skipped: no khPath or unsupported alg.\n");
+                if (opt.hostkey_status_cb) {
+                    std::string why = khPath.empty() ? "Ruta known_hosts no definida" : "Algoritmo de hostkey sin soporte de known_hosts en libssh2";
+                    opt.hostkey_status_cb(std::string("No se podrá guardar la huella: ") + why);
                 }
-            };
-            ensure_parent_dir_0700(khPath);
+                auditLogHostKey(opt.host, opt.port, algWithBits.str(), fpStr, "omitido");
+                // Continue without persisting
+            } else {
+                bool saved = false;
+                // Prepare add/typemask
+                bool preferHashed = opt.known_hosts_hash_names;
+                if (const char* ev = std::getenv("OPEN_SCP_KNOWNHOSTS_PLAIN")) {
+                    if (*ev == '1') preferHashed = false; else if (*ev == '0') preferHashed = true;
+                }
+                int nameMask = preferHashed ? LIBSSH2_KNOWNHOST_TYPE_SHA1
+                                            : LIBSSH2_KNOWNHOST_TYPE_PLAIN;
+                int addMask = nameMask | LIBSSH2_KNOWNHOST_KEYENC_RAW | alg;
+                // host string with port when non-default
+                std::string hostForKnown = opt.host;
+                if (opt.port != 22) hostForKnown = std::string("[") + opt.host + "]:" + std::to_string(opt.port);
 
-            // Atomic write: write to temp, fsync, chmod 0600, rename
-            std::string tmp = khPath + ".tmpXXXXXX";
-            std::vector<char> tmpl(tmp.begin(), tmp.end());
-            tmpl.push_back('\0');
-            int fd = mkstemp(tmpl.data());
-            if (fd >= 0) close(fd);
-            std::string tmpPath(tmpl.data());
-            if (libssh2_knownhost_writefile(nh, tmpPath.c_str(), LIBSSH2_KNOWNHOST_FILE_OPENSSH) != 0) {
-                libssh2_knownhost_free(nh);
-                err = "No se pudo agregar/escribir host en known_hosts";
-                return false;
-            }
-            // Harden permissions for known_hosts on POSIX
-            (void)::chmod(tmpPath.c_str(), 0600);
-            int fdw = ::open(tmpPath.c_str(), O_WRONLY);
-            if (fdw >= 0) { ::fchmod(fdw, 0600); ::fsync(fdw); ::close(fdw); }
-            ::rename(tmpPath.c_str(), khPath.c_str());
-            // fsync parent directory to persist rename
-            {
-                std::string dir = khPath;
-                std::size_t p = dir.find_last_of('/');
-                if (p != std::string::npos) dir.resize(p);
-                int dfd = ::open(dir.c_str(), O_RDONLY);
-                if (dfd >= 0) { ::fsync(dfd); ::close(dfd); }
-            }
+                // Add entry
+                if (alg != 0 && libssh2_knownhost_addc(nh, hostForKnown.c_str(), nullptr,
+                                           hostkey, (size_t)keylen,
+                                           nullptr, 0, addMask, nullptr) == 0) {
+#ifndef _WIN32
+                    // Ensure parent dir exists with 0700
+                    auto ensure_parent_dir_0700 = [](const std::string& path){
+                        std::string dir = path;
+                        std::size_t p = dir.find_last_of('/');
+                        if (p != std::string::npos) dir.resize(p);
+                        struct ::stat st{};
+                        if (::stat(dir.c_str(), &st) != 0) { (void)::mkdir(dir.c_str(), 0700); }
+                        else { (void)::chmod(dir.c_str(), 0700); }
+                    };
+                    ensure_parent_dir_0700(khPath);
+                    // Atomic write using mkstemp + rename; if mkstemp fails, treat as save failure (no insecure fallback)
+                    std::string tmp = khPath + ".tmpXXXXXX";
+                    std::vector<char> tmpl(tmp.begin(), tmp.end());
+                    tmpl.push_back('\0');
+                    int fd = mkstemp(tmpl.data());
+                    if (fd >= 0) close(fd);
+                    if (fd >= 0 && libssh2_knownhost_writefile(nh, tmpl.data(), LIBSSH2_KNOWNHOST_FILE_OPENSSH) == 0) {
+                        (void)::chmod(tmpl.data(), 0600);
+                        int fdw = ::open(tmpl.data(), O_WRONLY); if (fdw >= 0) { ::fchmod(fdw, 0600); ::fsync(fdw); ::close(fdw); }
+                        if (::rename(tmpl.data(), khPath.c_str()) != 0) {
+                            if (opt.hostkey_status_cb) opt.hostkey_status_cb("No se pudo guardar known_hosts: fallo al renombrar");
+                        }
+                        // fsync parent dir
+                        std::string dir = khPath;
+                        std::size_t p = dir.find_last_of('/'); if (p != std::string::npos) dir.resize(p);
+                        int dfd = ::open(dir.c_str(), O_RDONLY); if (dfd >= 0) { ::fsync(dfd); ::close(dfd); }
+                        saved = true;
+                    }
 #else
-            // Windows: write to temp, FlushFileBuffers, then replace atomically
-            std::string tmpPath = khPath + ".tmp";
-            if (libssh2_knownhost_writefile(nh, tmpPath.c_str(), LIBSSH2_KNOWNHOST_FILE_OPENSSH) != 0) {
-                libssh2_knownhost_free(nh);
-                err = "No se pudo agregar/escribir host en known_hosts";
-                return false;
-            }
-            HANDLE h = CreateFileA(tmpPath.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,
-                                   NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-            if (h != INVALID_HANDLE_VALUE) { FlushFileBuffers(h); CloseHandle(h); }
-            // Replace destination atomically if present
-            MoveFileExA(tmpPath.c_str(), khPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED);
+                    // Windows: write to tmp then replace atomically
+                    std::string tmpPath = khPath + ".tmp"; // On Windows this is acceptable with MoveFileExA
+                    if (libssh2_knownhost_writefile(nh, tmpPath.c_str(), LIBSSH2_KNOWNHOST_FILE_OPENSSH) == 0) {
+                        HANDLE h = CreateFileA(tmpPath.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,
+                                               NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+                        if (h != INVALID_HANDLE_VALUE) { FlushFileBuffers(h); CloseHandle(h); }
+                        MoveFileExA(tmpPath.c_str(), khPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED);
+                        saved = true;
+                    }
 #endif
-            libssh2_knownhost_free(nh);
+                }
+                // Manual ED25519 fallback when libssh2 lacks knownhosts alg mask
+#ifdef LIBSSH2_HOSTKEY_TYPE_ED25519
+                if (!saved && keytype == LIBSSH2_HOSTKEY_TYPE_ED25519) {
+                    std::string werr;
+                    std::fprintf(stderr, "[OpenSCP] Manual known_hosts write for ssh-ed25519 (libssh2 KH mask unavailable). keylen=%zu\n", (size_t)keylen);
+                    std::fprintf(stderr, "[OpenSCP] key head: %02X %02X %02X %02X %02X %02X %02X %02X (base64 len=%zu)\n",
+                                  (unsigned)((const unsigned char*)hostkey)[0], (unsigned)((const unsigned char*)hostkey)[1],
+                                  (unsigned)((const unsigned char*)hostkey)[2], (unsigned)((const unsigned char*)hostkey)[3],
+                                  (unsigned)((const unsigned char*)hostkey)[4], (unsigned)((const unsigned char*)hostkey)[5],
+                                  (unsigned)((const unsigned char*)hostkey)[6], (unsigned)((const unsigned char*)hostkey)[7],
+                                  b64encode((const unsigned char*)hostkey, (size_t)keylen).size());
+                    // Fallback: write OpenSSH line atomically (hashed or plain)
+#ifndef _WIN32
+                    // Ensure parent dir exists
+                    auto ensure_parent_dir_0700 = [](const std::string& path){
+                        std::string dir = path;
+                        std::size_t p = dir.find_last_of('/');
+                        if (p != std::string::npos) dir.resize(p);
+                        struct ::stat st{};
+                        if (::stat(dir.c_str(), &st) != 0) { (void)::mkdir(dir.c_str(), 0700); }
+                        else { (void)::chmod(dir.c_str(), 0700); }
+                    };
+                    ensure_parent_dir_0700(khPath);
+                    // Read existing
+                    std::string existing;
+                    int rfd = ::open(khPath.c_str(), O_RDONLY);
+                    if (rfd >= 0) { char buf[4096]; ssize_t n; while ((n=::read(rfd,buf,sizeof(buf)))>0) existing.append(buf,buf+n); ::close(rfd);}                    
+                    // Build lines
+                    std::vector<std::string> lines; { std::string tmp; for(char c:existing){ if(c=='\r') continue; if(c=='\n'){ lines.push_back(tmp); tmp.clear(); } else tmp.push_back(c);} if(!existing.empty() && existing.back()!='\n') lines.push_back(tmp); }
+                    std::string b64 = b64encode((const unsigned char*)hostkey, (size_t)keylen);
+                    std::string hostToken;
+                    if (preferHashed) {
+                        hostToken = openssh_hash_hostname(hostForKnown);
+                        // note: hashed entries won't be deduplicated (new salt)
+                        lines.push_back(hostToken + " ssh-ed25519 " + b64);
+                    } else {
+                        hostToken = hostForKnown;
+                        std::string prefix = hostToken + " ssh-ed25519 ";
+                        bool replaced=false; for(std::string& ln:lines){ if(ln.rfind(prefix,0)==0){ ln=prefix+b64; replaced=true; break; } }
+                        if(!replaced) lines.push_back(prefix+b64);
+                    }
+                    std::string tmpf = khPath + ".tmpXXXXXX"; std::vector<char> tmpl(tmpf.begin(), tmpf.end()); tmpl.push_back('\0');
+                    int tfd = ::mkstemp(tmpl.data());
+                    if (tfd >= 0) {
+                        for(size_t i=0;i<lines.size();++i){ if(!lines[i].empty()) (void)::write(tfd, lines[i].data(), (unsigned)lines[i].size()); const char nl='\n'; (void)::write(tfd, &nl, 1);}                        
+                        ::fchmod(tfd, 0600); ::fsync(tfd); ::close(tfd);
+                        if (::rename(tmpl.data(), khPath.c_str()) != 0) {
+                            if (opt.hostkey_status_cb) opt.hostkey_status_cb("No se pudo guardar known_hosts: fallo al renombrar (manual)");
+                        }
+                        std::string dir = khPath; std::size_t p = dir.find_last_of('/'); if (p!=std::string::npos) dir.resize(p);
+                        int dfd = ::open(dir.c_str(), O_RDONLY); if (dfd>=0){ ::fsync(dfd); ::close(dfd);}                        
+                        saved=true;
+                    }
+#endif
+                }
+#endif
 
-            // Audit log to stderr
-            std::fprintf(stderr, "[OpenSCP] HostKey alg=%s fp=%s\n", algWithBits.str().c_str(), fpStr.c_str());
+                libssh2_knownhost_free(nh);
+                if (saved) {
+                    auditLogHostKey(opt.host, opt.port, algWithBits.str(), fpStr, "guardado");
+                } else {
+                    // Saving failed: require explicit confirmation to proceed without saving
+                    bool proceed = (opt.hostkey_confirm_cb && opt.hostkey_confirm_cb(opt.host, opt.port, algWithBits.str(), fpStr, /*canSave*/false));
+                    if (!proceed) {
+                        auditLogHostKey(opt.host, opt.port, algWithBits.str(), fpStr, "fallo-guardar");
+                        err = "No se pudo guardar la huella en known_hosts";
+                        return false;
+                    }
+                    auditLogHostKey(opt.host, opt.port, algWithBits.str(), fpStr, "omitido");
+                }
+            }
         } else {
             libssh2_knownhost_free(nh);
             // Policy handling for non-match cases
@@ -1290,5 +1426,4 @@ std::unique_ptr<SftpClient> Libssh2SftpClient::newConnectionLike(const SessionOp
     if (!ptr->connect(opt, err)) return nullptr;
     return ptr;
 }
-
 } // namespace openscp
