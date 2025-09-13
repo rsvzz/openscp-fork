@@ -123,6 +123,7 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     }
 #endif
     // Insecure fallback (not recommended): allow QSettings storage
+#ifndef __APPLE__
     insecureFallback_ = new QCheckBox(tr("Permitir fallback inseguro de credenciales (no recomendado)."), advPanel);
     {
         auto* row = new QHBoxLayout();
@@ -130,6 +131,7 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
         row->addStretch();
         adv->addLayout(row);
     }
+#endif
     adv->addStretch();
     advPanel->setVisible(false);
     root->addWidget(advPanel);
@@ -259,6 +261,15 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     if (insecureFallback_) {
         connect(insecureFallback_, &QCheckBox::toggled, this, [this](bool on){
             if (on) {
+                // Temporarily prevent the Apply button from acting as default while the warning is shown (macOS sheet behavior)
+                bool prevAutoDefault = false;
+                bool prevDefault = false;
+                if (applyBtn_) {
+                    prevAutoDefault = applyBtn_->autoDefault();
+                    prevDefault = applyBtn_->isDefault();
+                    applyBtn_->setAutoDefault(false);
+                    applyBtn_->setDefault(false);
+                }
                 auto ret = QMessageBox::warning(this,
                                                 tr("Activar fallback inseguro"),
                                                 tr("Esto almacenará credenciales sin cifrar en el disco usando QSettings.\n"
@@ -266,6 +277,10 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
                                                    "¿Deseas activar el fallback inseguro igualmente?"),
                                                 QMessageBox::Yes | QMessageBox::No,
                                                 QMessageBox::No);
+                if (applyBtn_) {
+                    applyBtn_->setAutoDefault(prevAutoDefault);
+                    applyBtn_->setDefault(prevDefault);
+                }
                 if (ret != QMessageBox::Yes) {
                     insecureFallback_->blockSignals(true);
                     insecureFallback_->setChecked(false);
