@@ -27,6 +27,18 @@
       <source>No se encontró el archivo de créditos en docs/%1.\nCrea ese archivo y añade las librerías/licencias a listar.</source>
       <translation>Could not find the credits file at docs/%1.\nCreate that file and add the libraries/licenses to list.</translation>
     </message>
+    <message>
+      <source>Abrir carpeta de licencias</source>
+      <translation>Open Licenses Folder</translation>
+    </message>
+    <message>
+      <source>Carpeta de licencias no encontrada</source>
+      <translation>Licenses folder not found</translation>
+    </message>
+    <message>
+      <source>No se encontró la carpeta de licencias. Asegúrate de que el paquete incluya los textos de licencia (p.ej., dentro de la app o junto al AppImage).</source>
+      <translation>Could not find the licenses folder. Ensure the package includes the license texts (e.g., inside the app or next to the AppImage).</translation>
+    </message>
   </context>
   <context>
     <name>ConnectionDialog</name>

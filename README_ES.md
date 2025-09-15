@@ -100,7 +100,7 @@ Busca ser una alternativa ligera y multiplataforma a herramientas como WinSCP, e
 
 ## Requisitos
 
-* Qt **6.x**
+* Qt **6.8.3**
 * libssh2 (**OpenSSL 3** recomendado)
 * CMake **3.22+**
 * Compilador **C++20**
@@ -115,10 +115,11 @@ Busca ser una alternativa ligera y multiplataforma a herramientas como WinSCP, e
 ## Compilación
 
 ```bash
-git clone https://github.com/tuusuario/openscp.git
+git clone https://github.com/luiscuellar31/openscp.git
 cd openscp
-cmake -S . -B build
-cmake --build build
+rm -rf build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
 ./build/openscp_hello
 ```
 ---
@@ -136,8 +137,9 @@ cmake --build build
 
 ## Créditos y licencias
 
-* Atribución de terceros iniciada (ver **docs/**).
-* libssh2, OpenSSL y Qt son propiedad de sus respectivos autores.
+* libssh2, OpenSSL, zlib y Qt son propiedad de sus respectivos autores.
+* Textos de licencias: [docs/credits/LICENSES/](docs/credits/LICENSES/) — allí están las licencias de los proyectos de terceros (Qt, libssh2, OpenSSL, zlib, etc.).
+* Materiales de Qt (LGPL): [docs/](docs/) — ver notas de cumplimiento y licenciamiento (LGPLv3).
 
 ---
 

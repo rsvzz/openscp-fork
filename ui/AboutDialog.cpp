@@ -3,6 +3,7 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QDialogButtonBox>
+#include <QPushButton>
 #include <QTextEdit>
 #include <QFile>
 #include <QFileInfo>
@@ -12,9 +13,15 @@
 #include <QSettings>
 #include <QStringList>
 #include <QStringConverter>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QMessageBox>
 
 AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent) {
     setWindowTitle(tr("Acerca de OpenSCP"));
+    // Make the About dialog a bit larger (wider especially)
+    this->setMinimumSize(700, 440);
+    this->resize(820, 520);
 
     auto* lay = new QVBoxLayout(this);
 
@@ -87,6 +94,46 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent) {
     }
     libsText->setPlainText(content);
     lay->addWidget(libsText);
+
+    // Button: open licenses folder (packaged alongside the app)
+    auto* openLicensesBtn = new QPushButton(tr("Abrir carpeta de licencias"), this);
+    lay->addWidget(openLicensesBtn);
+    connect(openLicensesBtn, &QPushButton::clicked, this, [this]{
+        auto findLicensesDir = []() -> QString {
+            const QStringList bases = {
+                QDir::currentPath(),
+                QCoreApplication::applicationDirPath(),
+                QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(".."),
+                QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("../Resources") // macOS bundle Resources
+            };
+            const QStringList candidates = {
+                QStringLiteral("docs/credits/LICENSES"),
+                QStringLiteral("docs/licenses"),
+                QStringLiteral("usr/share/licenses"),
+                QStringLiteral("share/licenses"),
+                QStringLiteral("LICENSES"),
+                QStringLiteral("licenses"),
+                QStringLiteral("Licenses"),
+                QStringLiteral("Resources/licenses"),
+                QStringLiteral("Resources/LICENSES")
+            };
+            for (const QString& base : bases) {
+                for (const QString& rel : candidates) {
+                    const QString p = QDir(base).filePath(rel);
+                    if (QFileInfo::exists(p) && QFileInfo(p).isDir()) return QDir(p).absolutePath();
+                }
+            }
+            return {};
+        };
+        const QString dir = findLicensesDir();
+        if (!dir.isEmpty()) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+        } else {
+            QMessageBox::information(this,
+                                    tr("Carpeta de licencias no encontrada"),
+                                    tr("No se encontró la carpeta de licencias. Asegúrate de que el paquete incluya los textos de licencia (p.ej., dentro de la app o junto al AppImage)."));
+        }
+    });
 
     // Report an issue link at the bottom (opens Issues page)
     {
