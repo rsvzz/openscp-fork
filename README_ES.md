@@ -3,6 +3,10 @@
 **OpenSCP** es un explorador de archivos estilo *two-panel commander* escrito en **C++/Qt**, con soporte **SFTP** (libssh2 + OpenSSL).
 Busca ser una alternativa ligera y multiplataforma a herramientas como WinSCP, enfocado en **simplicidad**, **seguridad** y **extensibilidad**.
 
+<p align="center">
+  <img src="icons/screenshots/screenshot-main-window.png" alt="Ventana principal de OpenSCP con doble panel y cola de transferencias" width="900">
+</p>
+
 ---
 
 ## Características actuales
@@ -122,6 +126,16 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ./build/openscp_hello
 ```
+---
+
+## Capturas de pantalla
+
+<p align="center">
+  <img src="icons/screenshots/screenshot-site-manager.png" alt="Gestor de sitios con servidores guardados" width="32%">
+  <img src="icons/screenshots/screenshot-connect.png" alt="Diálogo de conexión con opciones de autenticación" width="32%">
+  <img src="icons/screenshots/screenshot-transfer-queue.png" alt="Cola de transferencias con pausar/reanudar y progreso" width="32%">
+</p>
+
 ---
 
 ## Roadmap (corto / medio plazo)
