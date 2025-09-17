@@ -4,6 +4,10 @@
 Busca ser una alternativa ligera y multiplataforma a herramientas como WinSCP, enfocado en **simplicidad**, **seguridad** y **extensibilidad**.
 
 <p align="center">
+  <img src="icons/program/icon-openscp-2048.png" alt="Icono de OpenSCP" width="160">
+</p>
+
+<p align="center">
   <img src="icons/screenshots/screenshot-main-window.png" alt="Ventana principal de OpenSCP con doble panel y cola de transferencias" width="900">
 </p>
 

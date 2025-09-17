@@ -6,6 +6,10 @@
 It aims to be a lightweight, cross-platform alternative to tools like WinSCP, focused on **simplicity**, **security**, and **extensibility**.
 
 <p align="center">
+  <img src="icons/program/icon-openscp-2048.png" alt="OpenSCP icon" width="160">
+</p>
+
+<p align="center">
   <img src="icons/screenshots/screenshot-main-window.png" alt="OpenSCP main window showing dual panels and transfer queue" width="900">
 </p>
 
