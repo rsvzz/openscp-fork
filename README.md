@@ -165,11 +165,11 @@ cmake --build build -j
 
 * libssh2, OpenSSL, zlib, and Qt are owned by their respective authors.
 * License texts: [docs/credits/LICENSES/](docs/credits/LICENSES/) — license files for third‑party components (Qt, libssh2, OpenSSL, zlib, etc.).
-* Qt (LGPL) materials: [docs/](docs/) — see Qt LGPLv3 compliance and licensing notes.
+* Qt (LGPL) materials: [docs/credits](docs/credits) — see Qt LGPLv3 compliance and licensing notes.
 
 ---
 
 ## Project Status
 
 OpenSCP is currently usable in most cases.
-Issues and pull requests are welcome—especially around macOS/Linux stability, i18n, and the drag-and-drop flow.
+Issues and pull requests are welcome, especially around macOS/Linux stability, i18n, and the drag-and-drop flow.

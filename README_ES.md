@@ -159,7 +159,7 @@ cmake --build build -j
 
 * libssh2, OpenSSL, zlib y Qt son propiedad de sus respectivos autores.
 * Textos de licencias: [docs/credits/LICENSES/](docs/credits/LICENSES/) — allí están las licencias de los proyectos de terceros (Qt, libssh2, OpenSSL, zlib, etc.).
-* Materiales de Qt (LGPL): [docs/](docs/) — ver notas de cumplimiento y licenciamiento (LGPLv3).
+* Materiales de Qt (LGPL): [docs/credits](docs/credits) — ver notas de cumplimiento y licenciamiento (LGPLv3).
 
 ---
 
