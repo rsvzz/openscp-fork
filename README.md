@@ -1,17 +1,24 @@
-# OpenSCP (Pre-alpha)
+<div align="center">
+  <img src="icons/program/icon-openscp-2048.png" alt="OpenSCP icon" width="96">
+  <h1 align="center">OpenSCP (Pre‑alpha)</h1>
 
-**[Leer en Español](README_ES.md)**
+  <p><strong>Two‑panel SFTP client focused on simplicity and security</strong></p>
 
-**OpenSCP** is a *two-panel commander*-style file explorer written in **C++/Qt**, with **SFTP** support (libssh2 + OpenSSL).
-It aims to be a lightweight, cross-platform alternative to tools like WinSCP, focused on **simplicity**, **security**, and **extensibility**.
+  <p>
+    <a href="README_ES.md"><strong>Leer en Español</strong></a>
+  </p>
 
-<p align="center">
-  <img src="icons/program/icon-openscp-2048.png" alt="OpenSCP icon" width="160">
-</p>
+  <br>
 
-<p align="center">
+  <p align="center">
+    <b>OpenSCP</b> is a two‑panel commander‑style file explorer written in C++/Qt with SFTP support (libssh2 + OpenSSL). It aims to be a lightweight, cross‑platform alternative to tools like WinSCP.
+  </p>
+
+  <br>
+
   <img src="icons/screenshots/screenshot-main-window.png" alt="OpenSCP main window showing dual panels and transfer queue" width="900">
-</p>
+
+</div>
 
 ---
 
